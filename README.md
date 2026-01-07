@@ -65,27 +65,27 @@ dotnet build tools/WileyWidgetMcpServer/WileyWidgetMcpServer.csproj
 
 ## 🛠️ Tools Available
 
-| Tool | Purpose |
-|------|---------|
-| `ValidateFormThemeTool` | Check if form uses specified Syncfusion theme |
-| `BatchValidateFormsTool` | Validate theme compliance across multiple forms |
-| `DetectManualColorsTool` | Find hardcoded Color.FromArgb() calls |
-| `InspectSfDataGridTool` | Analyze SfDataGrid configuration |
-| `InspectDockingManagerTool` | Examine DockingManager layout |
-| `ExportControlHierarchyTool` | Generate control tree as JSON/text |
-| `FindControlsByPropertyTool` | Search controls by property values |
-| `RunHeadlessFormTestTool` | Execute form tests without rendering |
-| `EvalCSharpTool` | Run dynamic C# code with form context |
-| `RunDependencyInjectionTestsTool` | Validate DI container setup |
-| `DetectNullRisksTool` | Find potential NullReferenceException risks |
-| `ValidateSyncfusionLicenseTool` | Verify Syncfusion license configuration |
+| Tool                              | Purpose                                         |
+| --------------------------------- | ----------------------------------------------- |
+| `ValidateFormThemeTool`           | Check if form uses specified Syncfusion theme   |
+| `BatchValidateFormsTool`          | Validate theme compliance across multiple forms |
+| `DetectManualColorsTool`          | Find hardcoded Color.FromArgb() calls           |
+| `InspectSfDataGridTool`           | Analyze SfDataGrid configuration                |
+| `InspectDockingManagerTool`       | Examine DockingManager layout                   |
+| `ExportControlHierarchyTool`      | Generate control tree as JSON/text              |
+| `FindControlsByPropertyTool`      | Search controls by property values              |
+| `RunHeadlessFormTestTool`         | Execute form tests without rendering            |
+| `EvalCSharpTool`                  | Run dynamic C# code with form context           |
+| `RunDependencyInjectionTestsTool` | Validate DI container setup                     |
+| `DetectNullRisksTool`             | Find potential NullReferenceException risks     |
+| `ValidateSyncfusionLicenseTool`   | Verify Syncfusion license configuration         |
 
 ## 💡 Use Cases
 
 ### With GitHub Copilot
 
 ```
-@workspace Use the syncfusion-winforms MCP server to validate all forms 
+@workspace Use the syncfusion-winforms MCP server to validate all forms
 in the Forms/ directory use Office2019Colorful theme. Show me any violations.
 ```
 
@@ -101,7 +101,7 @@ dotnet run --project tools/WileyWidgetMcpServer -- \
 ### Theme Migration
 
 ```
-@workspace Use DetectManualColorsTool to find all hardcoded colors in my forms. 
+@workspace Use DetectManualColorsTool to find all hardcoded colors in my forms.
 I'm migrating to SkinManager-based theming.
 ```
 

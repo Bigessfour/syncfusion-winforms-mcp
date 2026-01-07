@@ -7,6 +7,7 @@ Get started validating your WinForms forms in **2 minutes**.
 ## 1. Install & Setup
 
 ### Prerequisites
+
 - .NET 10.0+ installed
 - Visual Studio 2022 or VS Code (with C# extension)
 
@@ -38,6 +39,7 @@ dotnet run --project tools/WileyWidgetMcpServer -- \
 ```
 
 **Expected Output:**
+
 ```json
 {
   "formName": "MainForm",
@@ -102,7 +104,7 @@ jobs:
       - uses: actions/checkout@v3
       - uses: dotnet/setup-dotnet@v3
         with:
-          dotnet-version: '10.0.x'
+          dotnet-version: "10.0.x"
       - run: dotnet build
       - run: |
           dotnet run --project tools/WileyWidgetMcpServer -- \

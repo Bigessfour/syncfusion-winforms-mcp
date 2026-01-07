@@ -324,7 +324,7 @@ var formType = assembly.GetType(formTypeName); // Slow reflection every time
   run: |
     dotnet run --project tools/WileyWidgetMcpServer/WileyWidgetMcpServer.csproj -- \
       BatchValidateForms null "Office2019Colorful" false "json" > theme-report.json
-    
+
     # Parse JSON and fail if any violations found
     $report = Get-Content theme-report.json | ConvertFrom-Json
     if ($report.summary.failed -gt 0) {
@@ -408,7 +408,7 @@ public void ValidateFormTheme_ShouldPass_WhenNoManualColors()
         "Office2019Colorful",
         "json"
     );
-    
+
     var json = JsonDocument.Parse(result);
     Assert.True(json.RootElement.GetProperty("passed").GetBoolean());
 }

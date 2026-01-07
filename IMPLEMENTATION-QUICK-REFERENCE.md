@@ -5,6 +5,7 @@
 **Location:** [src/WileyWidget.WinForms/ViewModels/QuickBooksViewModel.cs](src/WileyWidget.WinForms/ViewModels/QuickBooksViewModel.cs#L696)
 
 **Pattern:**
+
 ```csharp
 // Show file dialog
 using var dialog = new SaveFileDialog
@@ -32,6 +33,7 @@ await File.WriteAllTextAsync(dialog.FileName, csvBuilder.ToString(), cancellatio
 ```
 
 **Features:**
+
 - ✅ File dialog with CSV filter
 - ✅ Proper quote escaping
 - ✅ Async file writing
@@ -45,6 +47,7 @@ await File.WriteAllTextAsync(dialog.FileName, csvBuilder.ToString(), cancellatio
 **Location:** [src/WileyWidget.WinForms/ViewModels/UtilityBillViewModel.cs](src/WileyWidget.WinForms/ViewModels/UtilityBillViewModel.cs#L468)
 
 **Pattern:**
+
 ```csharp
 // Show file dialog with format options
 using var dialog = new SaveFileDialog
@@ -81,15 +84,16 @@ else
 ```
 
 **Helper Methods:**
+
 ```csharp
 // CSV Generation
 private static string BuildCsvReport(List<Dictionary<string, object>> reportData)
 {
     var csvBuilder = new StringBuilder();
     var headers = reportData.First().Keys.ToList();
-    
+
     csvBuilder.AppendLine(string.Join(",", headers.Select(h => $"\"{h}\"")));
-    
+
     foreach (var row in reportData.Skip(1))
     {
         var values = headers.Select(h =>
@@ -100,7 +104,7 @@ private static string BuildCsvReport(List<Dictionary<string, object>> reportData
         });
         csvBuilder.AppendLine(string.Join(",", values));
     }
-    
+
     return csvBuilder.ToString();
 }
 
@@ -109,24 +113,25 @@ private static string BuildPdfReport(List<Dictionary<string, object>> reportData
 {
     var report = new StringBuilder();
     var invariantCulture = CultureInfo.InvariantCulture;
-    
+
     report.AppendLine("═══════════════════════════════════════════════════════════");
     report.AppendLine("REPORT TITLE");
     report.AppendLine(invariantCulture, $"Generated: {DateTime.Now:yyyy-MM-dd HH:mm:ss}");
     report.AppendLine("═══════════════════════════════════════════════════════════");
-    
+
     // Format as table
     var headers = reportData.First().Keys.ToList();
     var columnWidths = headers.Select(h => Math.Max(h.Length, 20)).ToList();
-    
+
     // Header and data rows with padding
     // ...
-    
+
     return report.ToString();
 }
 ```
 
 **Features:**
+
 - ✅ Multiple format support (PDF fallback, Excel, CSV)
 - ✅ Statistics gathering
 - ✅ File dialog with format filtering
@@ -141,6 +146,7 @@ private static string BuildPdfReport(List<Dictionary<string, object>> reportData
 **Location:** [src/WileyWidget.WinForms/ViewModels/RecommendedMonthlyChargeViewModel.cs](src/WileyWidget.WinForms/ViewModels/RecommendedMonthlyChargeViewModel.cs#L XXX)
 
 **Current Implementation:**
+
 ```csharp
 private async Task SaveCurrentChargesAsync(CancellationToken cancellationToken = default)
 {
@@ -148,9 +154,9 @@ private async Task SaveCurrentChargesAsync(CancellationToken cancellationToken =
     {
         IsLoading = true;
         StatusText = "Saving charges...";
-        
+
         _logger.LogInformation("Saving department charges for {DepartmentCount} departments", Departments.Count);
-        
+
         foreach (var department in Departments)
         {
             _logger.LogDebug(
@@ -158,7 +164,7 @@ private async Task SaveCurrentChargesAsync(CancellationToken cancellationToken =
                 "Current Monthly Charge: ${CurrentCharge:F2}, Suggested: ${SuggestedCharge:F2}",
                 department.Name, department.Id, department.MonthlyCharge, department.SuggestedMonthlyCharge);
         }
-        
+
         // TODO: Integrate with IDepartmentRepository when service is available
         // Pattern:
         // foreach (var department in Departments)
@@ -166,9 +172,9 @@ private async Task SaveCurrentChargesAsync(CancellationToken cancellationToken =
         //     department.MonthlyCharge = department.SuggestedMonthlyCharge;
         //     await _departmentRepository.UpdateAsync(department, cancellationToken);
         // }
-        
+
         await Task.Delay(300, cancellationToken); // Simulate DB operation
-        
+
         StatusText = "Charges saved successfully";
         _logger.LogInformation("Successfully saved charges for {Count} departments", Departments.Count);
     }
@@ -184,6 +190,7 @@ private async Task SaveCurrentChargesAsync(CancellationToken cancellationToken =
 ```
 
 **Future Integration:**
+
 ```csharp
 // When IDepartmentRepository is injected:
 private readonly IDepartmentRepository _departmentRepository;
@@ -199,6 +206,7 @@ private async Task SaveCurrentChargesAsync(CancellationToken cancellationToken =
 ```
 
 **Pattern:**
+
 - ✅ Logging shows what will be persisted
 - ✅ Structured for easy service injection
 - ✅ Async/await ready
@@ -212,6 +220,7 @@ private async Task SaveCurrentChargesAsync(CancellationToken cancellationToken =
 **Location:** [src/WileyWidget.WinForms/Configuration/DependencyInjection.cs](src/WileyWidget.WinForms/Configuration/DependencyInjection.cs#L198)
 
 **Configuration:**
+
 ```csharp
 // AI Services (Scoped - may hold request-specific context)
 services.AddScoped<IAIService, XAIService>();
@@ -225,6 +234,7 @@ services.AddScoped<IConversationRepository, EfConversationRepository>(); // ✅ 
 **Implementation:** [EfConversationRepository.cs](src/WileyWidget.Services/EfConversationRepository.cs)
 
 **Methods:**
+
 - `SaveConversationAsync(conversation)` - Create or update conversation
 - `GetConversationAsync(id)` - Retrieve single conversation
 - `GetConversationsAsync(pageNumber, pageSize)` - Paged list
@@ -242,19 +252,19 @@ try
     IsLoading = true;
     StatusText = "Operation in progress...";
     ErrorMessage = null;
-    
+
     _logger.LogInformation("Operation starting");
-    
+
     // Validation
     if (!HasData)
     {
         ErrorMessage = "No data available";
         return;
     }
-    
+
     // Main operation
     // ...
-    
+
     StatusText = "Operation completed";
     _logger.LogInformation("Operation completed successfully");
 }
@@ -284,6 +294,7 @@ finally
 ```
 
 **Pattern Elements:**
+
 - ✅ IsLoading flag management
 - ✅ StatusText updates for user feedback
 - ✅ ErrorMessage for error display
@@ -312,6 +323,7 @@ dotnet build WileyWidget.sln --verbosity quiet /p:RunAnalyzers=false
 ```
 
 **Current Build Status:**
+
 ```
 Build succeeded in 18.1s
 - 11 Projects: ✅ All successful
@@ -324,6 +336,7 @@ Build succeeded in 18.1s
 ## Testing Checklist
 
 ### Unit Tests
+
 - [ ] ExportHistoryAsync CSV escaping
 - [ ] GenerateReportAsync statistics
 - [ ] BuildCsvReport format
@@ -331,12 +344,14 @@ Build succeeded in 18.1s
 - [ ] SaveCurrentChargesAsync logging
 
 ### Integration Tests
+
 - [ ] File dialogs appear correctly
 - [ ] Files created with correct content
 - [ ] EfConversationRepository DI injection
 - [ ] Exception handling and user dialogs
 
 ### Manual Testing
+
 - [ ] QuickBooks Export: File created, CSV readable
 - [ ] Utility Report: Multiple formats supported
 - [ ] Chat Panel: Conversations persisted in DB

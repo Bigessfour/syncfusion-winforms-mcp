@@ -339,4 +339,4 @@ if (-not $json.passed) {
 
 ---
 
-*Last Updated: December 2025*
+_Last Updated: December 2025_

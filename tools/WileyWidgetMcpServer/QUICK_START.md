@@ -8,12 +8,12 @@ The WileyWidget MCP server is now **fully functional** with the official Microso
 
 ### 4 Production-Ready MCP Tools
 
-| Tool | Purpose | Key Features |
-|------|---------|--------------|
-| **`ValidateFormTheme`** | Theme compliance checking | - Verifies SfSkinManager usage<br>- Detects manual color violations<br>- Headless form instantiation |
-| **`InspectSfDataGrid`** | Grid inspection | - Column count/config<br>- Data binding validation<br>- Sample data extraction |
-| **`RunHeadlessFormTest`** | Script execution | - Run .csx test files<br>- Inline C# code<br>- Compilation + runtime errors |
-| **`EvalCSharp`** | Dynamic C# evaluation | - **Rapid prototyping**<br>- Interactive debugging<br>- No recompilation needed |
+| Tool                      | Purpose                   | Key Features                                                                                         |
+| ------------------------- | ------------------------- | ---------------------------------------------------------------------------------------------------- |
+| **`ValidateFormTheme`**   | Theme compliance checking | - Verifies SfSkinManager usage<br>- Detects manual color violations<br>- Headless form instantiation |
+| **`InspectSfDataGrid`**   | Grid inspection           | - Column count/config<br>- Data binding validation<br>- Sample data extraction                       |
+| **`RunHeadlessFormTest`** | Script execution          | - Run .csx test files<br>- Inline C# code<br>- Compilation + runtime errors                          |
+| **`EvalCSharp`**          | Dynamic C# evaluation     | - **Rapid prototyping**<br>- Interactive debugging<br>- No recompilation needed                      |
 
 ### Architecture
 
@@ -63,7 +63,7 @@ tools/WileyWidgetMcpServer/
 
 "Inspect BudgetOverviewForm SfDataGrid and show column config"
 
-"Evaluate this C# code: 
+"Evaluate this C# code:
 var form = new AccountsForm(MockFactory.CreateMockMainForm());
 form.Show();
 Console.WriteLine($\"Columns: {form.Controls.OfType<SfDataGrid>().First().Columns.Count}\");
@@ -102,7 +102,7 @@ The new **`EvalCSharp`** tool provides `mcp_csharp-mcp_eval_c_sharp` functionali
 
 - **Executes C# code dynamically** without recompilation
 - **Pre-loaded references**: WinForms, Syncfusion, WileyWidget assemblies, Moq
-- **Pre-imported namespaces**: System, Windows.Forms, Syncfusion.*, WileyWidget.*
+- **Pre-imported namespaces**: System, Windows.Forms, Syncfusion._, WileyWidget._
 - **Timeout protection**: Default 30 seconds (configurable)
 - **Stdout/stderr capture**: See Console.WriteLine output
 
@@ -173,7 +173,7 @@ if (grid.DataSource != null)
 {
     Console.WriteLine($"DataSource Type: {grid.DataSource.GetType().Name}");
     Console.WriteLine($"Row Count: {grid.View.Records.Count}");
-    
+
     // Sample first row
     if (grid.View.Records.Count > 0)
     {
@@ -190,7 +190,7 @@ form.Dispose();
 ```plaintext
 # In Copilot Chat:
 
-"Using EvalCSharp, instantiate SettingsForm and verify it has 
+"Using EvalCSharp, instantiate SettingsForm and verify it has
 an SfDataGrid with at least 5 columns, then print the column headers"
 
 # Copilot generates appropriate C# code and invokes mcp_csharp-mcp_eval_c_sharp
@@ -291,12 +291,12 @@ Copilot:
 
 ## Performance
 
-| Operation | Typical Duration |
-|-----------|------------------|
-| Form validation | 100-300ms |
-| Grid inspection | 150-400ms |
-| .csx execution | 200-500ms |
-| EvalCSharp (inline) | 150-350ms |
+| Operation           | Typical Duration |
+| ------------------- | ---------------- |
+| Form validation     | 100-300ms        |
+| Grid inspection     | 150-400ms        |
+| .csx execution      | 200-500ms        |
+| EvalCSharp (inline) | 150-350ms        |
 
 **Optimization:** Use `--no-build` flag after initial build.
 
@@ -389,7 +389,7 @@ Expected output: Theme validation report with pass/fail status.
 ```plaintext
 # In Copilot Chat:
 
-"Using EvalCSharp, list all forms in WileyWidget.WinForms.Forms namespace 
+"Using EvalCSharp, list all forms in WileyWidget.WinForms.Forms namespace
 that have an SfDataGrid control"
 ```
 
