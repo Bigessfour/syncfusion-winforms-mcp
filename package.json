@@ -1,0 +1,28 @@
+{
+  "name": "syncfusion-winforms-mcp",
+  "version": "1.1.0",
+  "description": "Syncfusion WinForms MCP Server with xAI Grok-4 Integration",
+  "type": "module",
+  "scripts": {
+    "test:inspector": "npx @modelcontextprotocol/inspector dotnet run --project tools/WileyWidgetMcpServer",
+    "test:server": "dotnet run --project tools/WileyWidgetMcpServer",
+    "test:tools": "dotnet test tests/WileyWidgetMcpServer.Tests --filter RemediationSuggestorToolTests",
+    "test:unit": "dotnet test tests/WileyWidgetMcpServer.Tests",
+    "test:all": "npm run test:unit && npm run build",
+    "build": "dotnet build tools/WileyWidgetMcpServer",
+    "lint": "markdownlint *.md docs/**/*.md"
+  },
+  "devDependencies": {
+    "@modelcontextprotocol/inspector": "latest"
+  },
+  "keywords": [
+    "mcp",
+    "model-context-protocol",
+    "syncfusion",
+    "winforms",
+    "xai",
+    "grok"
+  ],
+  "author": "BusBuddy/Wiley Widget",
+  "license": "MIT"
+}
