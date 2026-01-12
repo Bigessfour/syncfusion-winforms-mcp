@@ -1,3 +1,9 @@
+using System.Windows.Forms;
+using System.Collections.Generic;
+using System;
+
+namespace WileyWidget.McpServer.Abstractions;
+
 /// <summary>
 /// Framework-agnostic abstraction for theme/style validation.
 /// Allows ValidateFormTheme to work with Syncfusion, DevExpress, Telerik, vanilla WinForms, etc.
@@ -36,75 +42,54 @@ public interface IThemeValidator
 /// </summary>
 public class ThemeViolation
 {
-    /// <summary>
-    /// Type of violation (e.g., "ManualBackColor", "IncompatibleTheme", "MissingTheme")
-    /// </summary>
-    public string ViolationType { get; set; }
-
-    /// <summary>
-    /// Full path to the violating control (e.g., "MainForm > dockingManager1 > panel1 > button1")
-    /// </summary>
-    public string ControlPath { get; set; }
-
-    /// <summary>
-    /// Control type (e.g., "Panel", "SfDataGrid", "Button")
-    /// </summary>
-    public string ControlType { get; set; }
-
-    /// <summary>
-    /// Detailed description of the violation.
-    /// </summary>
-    public string Description { get; set; }
-
-    /// <summary>
-    /// Suggested fix (e.g., "Remove BackColor assignment; let theme cascade from parent")
-    /// </summary>
-    public string SuggestedFix { get; set; }
-
-    /// <summary>
-    /// Severity: "Error", "Warning", "Info"
-    /// </summary>
+    public string? ViolationType { get; set; }
+    public string? ControlPath { get; set; }
+    public string? ControlType { get; set; }
+    public string? Description { get; set; }
+    public string? SuggestedFix { get; set; }
     public string Severity { get; set; } = "Warning";
 }
 
 /// <summary>
-/// Implementations:
-/// - SyncfusionThemeValidator (existing behavior, now implements IThemeValidator)
-/// - DevExpressThemeValidator (future implementation)
-/// - TelerikThemeValidator (future implementation)
-/// - VanillaWinFormsValidator (generic - checks for manual colors, TabIndex order, etc.)
+/// Factory for creating theme validators based on framework detection.
+/// Validator implementations are in ThemeValidators.cs
 /// </summary>
 public class ThemeValidatorFactory
-{
-    /// <summary>
-    /// Auto-detects which validator to use based on assemblies loaded in the form.
-    /// Falls back to VanillaWinFormsValidator if no specific framework detected.
-    /// </summary>
-    public static IThemeValidator Create(Control control, string frameworkHint = null)
     {
-        if (!string.IsNullOrEmpty(frameworkHint))
+        /// <summary>
+        /// Auto-detects which validator to use based on assemblies loaded in the form.
+        /// Falls back to VanillaWinFormsValidator if no specific framework detected.
+        /// </summary>
+        public static IThemeValidator Create(Control control, string? frameworkHint = null)
         {
-            return frameworkHint.ToLower() switch
+            if (!string.IsNullOrEmpty(frameworkHint))
             {
-                "syncfusion" => new SyncfusionThemeValidator(),
-                "devexpress" => new DevExpressThemeValidator(),
-                "telerik" => new TelerikThemeValidator(),
-                _ => new VanillaWinFormsValidator()
-            };
+                return frameworkHint.ToLower(System.Globalization.CultureInfo.InvariantCulture) switch
+                {
+                    "syncfusion" => new SyncfusionThemeValidator(),
+                    "devexpress" => new DevExpressThemeValidator(),
+                    "telerik" => new TelerikThemeValidator(),
+                    _ => new VanillaWinFormsValidator()
+                };
+            }
+
+            // Auto-detect
+            var assembly = control.GetType().Assembly;
+            var name = assembly.GetName().Name;
+
+            if (name != null)
+            {
+                if (name.Contains("Syncfusion", StringComparison.OrdinalIgnoreCase))
+                    return new SyncfusionThemeValidator();
+
+                if (name.Contains("DevExpress", StringComparison.OrdinalIgnoreCase))
+                    return new DevExpressThemeValidator();
+
+                if (name.Contains("Telerik", StringComparison.OrdinalIgnoreCase))
+                    return new TelerikThemeValidator();
+            }
+
+            // Default: vanilla WinForms
+            return new VanillaWinFormsValidator();
         }
-
-        // Auto-detect
-        var assembly = control.GetType().Assembly;
-        if (assembly.GetName().Name.Contains("Syncfusion"))
-            return new SyncfusionThemeValidator();
-
-        if (assembly.GetName().Name.Contains("DevExpress"))
-            return new DevExpressThemeValidator();
-
-        if (assembly.GetName().Name.Contains("Telerik"))
-            return new TelerikThemeValidator();
-
-        // Default: vanilla WinForms
-        return new VanillaWinFormsValidator();
     }
-}

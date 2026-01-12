@@ -3,8 +3,9 @@ using System.Collections.Generic;
 using System.Linq;
 using System.Windows.Forms;
 using System.Text.Json;
+using WileyWidget.McpServer.Helpers;
 
-namespace WileyWidgetMcpServer.Tools;
+namespace WileyWidget.McpServer.Tools;
 
 /// <summary>
 /// Exports the complete control hierarchy of a form as a structured tree (JSON or text).
@@ -14,16 +15,16 @@ public static class ExportControlHierarchyTool
 {
     public class ControlNode
     {
-        public string Name { get; set; }
-        public string Type { get; set; }
-        public string Text { get; set; }
+        public required string Name { get; set; }
+        public required string Type { get; set; }
+        public required string Text { get; set; }
         public int X { get; set; }
         public int Y { get; set; }
         public int Width { get; set; }
         public int Height { get; set; }
         public bool Visible { get; set; }
         public bool Enabled { get; set; }
-        public string Dock { get; set; }
+        public required string Dock { get; set; }
         public int TabIndex { get; set; }
         public List<ControlNode> Children { get; set; } = new();
     }

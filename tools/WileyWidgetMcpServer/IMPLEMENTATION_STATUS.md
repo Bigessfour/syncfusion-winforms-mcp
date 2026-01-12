@@ -109,7 +109,7 @@ The WileyWidget MCP server is **fully functional** and ready for production use.
   - ConstructorInjection - Validates automatic constructor injection
   - ServiceDisposal - Validates IDisposable services are disposed
   - CircularDependency - Validates circular dependency detection
-  - MultipleImplementations - Validates IEnumerable<T> resolution
+  - MultipleImplementations - Validates IEnumerable&lt;T&gt; resolution
   - FactoryMethods - Validates factory-based registration
   - OptionalDependencies - Validates optional parameter handling
   - ServiceValidation - Validates ValidateOnBuild and ValidateScopes

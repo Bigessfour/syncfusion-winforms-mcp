@@ -2,8 +2,9 @@ using System;
 using System.Collections.Generic;
 using System.Linq;
 using System.Windows.Forms;
+using WileyWidget.McpServer.Helpers;
 
-namespace WileyWidgetMcpServer.Tools;
+namespace WileyWidget.McpServer.Tools;
 
 /// <summary>
 /// Search a form for controls matching specific criteria.
@@ -17,10 +18,10 @@ public static class FindControlsByPropertyTool
 {
     public class ControlMatch
     {
-        public string ControlPath { get; set; }
-        public string ControlName { get; set; }
-        public string ControlType { get; set; }
-        public string Text { get; set; }
+        public required string ControlPath { get; set; }
+        public required string ControlName { get; set; }
+        public required string ControlType { get; set; }
+        public required string Text { get; set; }
         public Dictionary<string, object> MatchingProperties { get; set; } = new();
     }
 
@@ -75,10 +76,10 @@ public static class FindControlsByPropertyTool
     {
         var parsed = new Dictionary<string, string>();
 
-        var parts = criteria.Split(new[] { ";" }, StringSplitOptions.RemoveEmptyEntries);
+        var parts = criteria.Split(';', StringSplitOptions.RemoveEmptyEntries);
         foreach (var part in parts)
         {
-            var kv = part.Split(new[] { "=" }, StringSplitOptions.RemoveEmptyEntries, 2);
+            var kv = part.Split('=', 2, StringSplitOptions.RemoveEmptyEntries);
             if (kv.Length == 2)
             {
                 parsed[kv[0].Trim()] = kv[1].Trim();
@@ -166,7 +167,7 @@ public static class FindControlsByPropertyTool
             {
                 // Generic property matching
                 var value = GetPropertyValue(control, key);
-                if (value == null || !value.ToString().Equals(expected, StringComparison.OrdinalIgnoreCase))
+                if (value == null || !value.ToString()!.Equals(expected, StringComparison.OrdinalIgnoreCase))
                     return false;
             }
         }
@@ -193,12 +194,12 @@ public static class FindControlsByPropertyTool
         return control.GetType().BaseType?.Name.Equals(pattern, StringComparison.OrdinalIgnoreCase) ?? false;
     }
 
-    private static object GetPropertyValue(Control control, string propertyPath)
+    private static object? GetPropertyValue(Control control, string propertyPath)
     {
         try
         {
-            var parts = propertyPath.Split(new[] { "." }, StringSplitOptions.RemoveEmptyEntries);
-            object current = control;
+            var parts = propertyPath.Split('.', StringSplitOptions.RemoveEmptyEntries);
+            object? current = control;
 
             foreach (var part in parts)
             {

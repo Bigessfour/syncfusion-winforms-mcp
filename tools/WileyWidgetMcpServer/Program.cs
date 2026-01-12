@@ -16,12 +16,24 @@ public class Program
         try
         {
             // Allow a quick CLI helper to run the license check without starting the MCP server
-            if (args != null && args.Length > 0 && args[0] == "--run-license-check")
+            if (args != null && args.Length > 0)
             {
-                var fmt = args.Length > 1 ? args[1] : "json";
-                var output = WileyWidget.McpServer.Tools.ValidateSyncfusionLicenseTool.ValidateSyncfusionLicense(fmt);
-                Console.WriteLine(output);
-                return 0;
+                if (args[0] == "--run-license-check")
+                {
+                    var fmt = args.Length > 1 ? args[1] : "json";
+                    var output = WileyWidget.McpServer.Tools.ValidateSyncfusionLicenseTool.ValidateSyncfusionLicense(fmt);
+                    Console.WriteLine(output);
+                    return 0;
+                }
+
+                if (args[0] == "--run-script" && args.Length > 1)
+                {
+                    var scriptPath = args[1];
+                    Console.WriteLine($"Running script: {scriptPath}...");
+                    var result = await WileyWidget.McpServer.Tools.RunHeadlessFormTestTool.RunHeadlessFormTest(scriptPath: scriptPath);
+                    Console.WriteLine(result);
+                    return 0;
+                }
             }
 
             // Create empty application builder (no console output noise for STDIO transport)

@@ -366,6 +366,10 @@ dotnet run --project tools/WileyWidgetMcpServer/WileyWidgetMcpServer.csproj
 .WithImports("MyNamespace")
 ```
 
+### Regression Scripts (csx)
+
+- SafeSplitterDistanceHelper narrow-width check: run EvalCSharp with `csxFile: "tools/SyncfusionMcpServer/tools/WileyWidgetMcpServer/Tests/SafeSplitterDistanceHelper.QuickBooksPanel.csx"` to verify splitter safety when the container is narrower than combined panel minima.
+
 ## Next Steps
 
 ### 1. Configure Copilot (5 minutes)

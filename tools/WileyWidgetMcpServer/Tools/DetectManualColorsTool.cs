@@ -3,8 +3,9 @@ using System.Collections.Generic;
 using System.Drawing;
 using System.Linq;
 using System.Windows.Forms;
+using WileyWidget.McpServer.Helpers;
 
-namespace WileyWidgetMcpServer.Tools;
+namespace WileyWidget.McpServer.Tools;
 
 /// <summary>
 /// Detects manual color assignments (BackColor/ForeColor) that bypass theme systems.
@@ -28,12 +29,12 @@ public static class DetectManualColorsTool
 
     public class ManualColorViolation
     {
-        public string ControlPath { get; set; }
-        public string ControlType { get; set; }
-        public string PropertyName { get; set; } // BackColor or ForeColor
-        public string ColorValue { get; set; }   // "Color [Red]"
+        public required string ControlPath { get; set; }
+        public required string ControlType { get; set; }
+        public required string PropertyName { get; set; } // BackColor or ForeColor
+        public required string ColorValue { get; set; }   // "Color [Red]"
         public bool IsSemanticColor { get; set; }
-        public string Severity { get; set; }
+        public required string Severity { get; set; }
     }
 
     /// <summary>

@@ -79,14 +79,19 @@ public static class RunHeadlessFormTestTool
             }
 
             // Execute test
+            TestExecutionResult result;
             if (runOnStaThread)
             {
-                testPassed = await ExecuteOnStaThread(codeToExecute, testDescription, captureConsoleOutput, output, cancellationTokenSource.Token, ref testResult, ref runtimeException);
+                result = await ExecuteOnStaThread(codeToExecute, testDescription, captureConsoleOutput, output, cancellationTokenSource.Token);
             }
             else
             {
-                testPassed = await ExecuteTest(codeToExecute, testDescription, captureConsoleOutput, output, cancellationTokenSource.Token, ref testResult, ref runtimeException);
+                result = await ExecuteTest(codeToExecute, testDescription, captureConsoleOutput, output, cancellationTokenSource.Token);
             }
+
+            testPassed = result.Passed;
+            testResult = result.Result;
+            runtimeException = result.Exception;
 
             // Store result in session if requested
             if (sessionId != null)
@@ -128,20 +133,26 @@ public static class RunHeadlessFormTestTool
         }
     }
 
+    private class TestExecutionResult
+    {
+        public bool Passed { get; set; }
+        public object? Result { get; set; }
+        public Exception? Exception { get; set; }
+    }
+
     /// <summary>
     /// Execute test on default thread with console capture.
     /// </summary>
-    private static async Task<bool> ExecuteTest(
+    private static async Task<TestExecutionResult> ExecuteTest(
         string codeToExecute,
         string testDescription,
         bool captureConsoleOutput,
         StringBuilder output,
-        CancellationToken cancellationToken,
-        ref object? testResult,
-        ref Exception? runtimeException)
+        CancellationToken cancellationToken)
     {
         var originalOut = Console.Out;
         var originalError = Console.Error;
+        var executionResult = new TestExecutionResult();
 
         try
         {
@@ -156,10 +167,10 @@ public static class RunHeadlessFormTestTool
             var scriptOptions = BuildScriptOptions();
 
             var result = await CSharpScript.EvaluateAsync(codeToExecute, scriptOptions, cancellationToken: cancellationToken);
-            testResult = result;
+            executionResult.Result = result;
 
             // Convention: return true = pass, false = fail, null/void = pass
-            return result switch
+            executionResult.Passed = result switch
             {
                 bool b => b,
                 _ => true
@@ -167,13 +178,13 @@ public static class RunHeadlessFormTestTool
         }
         catch (CompilationErrorException compilationEx)
         {
-            runtimeException = compilationEx;
-            return false;
+            executionResult.Exception = compilationEx;
+            executionResult.Passed = false;
         }
         catch (Exception testEx)
         {
-            runtimeException = testEx;
-            return false;
+            executionResult.Exception = testEx;
+            executionResult.Passed = false;
         }
         finally
         {
@@ -183,73 +194,77 @@ public static class RunHeadlessFormTestTool
                 Console.SetError(originalError);
             }
         }
+
+        return executionResult;
     }
 
     /// <summary>
     /// Execute test on STA thread (for Syncfusion initialization edge cases).
     /// </summary>
-    private static async Task<bool> ExecuteOnStaThread(
+    private static async Task<TestExecutionResult> ExecuteOnStaThread(
         string codeToExecute,
         string testDescription,
         bool captureConsoleOutput,
         StringBuilder output,
-        CancellationToken cancellationToken,
-        ref object? testResult,
-        ref Exception? runtimeException)
+        CancellationToken cancellationToken)
     {
-        bool testPassed = false;
-        var staThread = new Thread(() =>
+        var container = new TestExecutionResult();
+
+        // We run a managed thread that blocks, so we wrap it in Task.Run if we want to await it,
+        // but the method is async so we can just return a Task.
+
+        await Task.Run(() =>
         {
-            var originalOut = Console.Out;
-            var originalError = Console.Error;
+            var staThread = new Thread(() =>
+            {
+               // ... logic ...
+               var originalOut = Console.Out;
+               var originalError = Console.Error;
 
-            try
-            {
-                if (captureConsoleOutput)
-                {
-                    var stringWriter = new StringWriter(output);
-                    Console.SetOut(stringWriter);
-                    Console.SetError(stringWriter);
-                }
+               try
+               {
+                   if (captureConsoleOutput)
+                   {
+                       var stringWriter = new StringWriter(output);
+                       Console.SetOut(stringWriter);
+                       Console.SetError(stringWriter);
+                   }
 
-                var scriptOptions = BuildScriptOptions();
-                var task = CSharpScript.EvaluateAsync(codeToExecute, scriptOptions, cancellationToken: cancellationToken);
-                task.Wait(cancellationToken);
+                   var scriptOptions = BuildScriptOptions();
+                   var task = CSharpScript.EvaluateAsync(codeToExecute, scriptOptions, cancellationToken: cancellationToken);
+                   task.Wait(cancellationToken);
 
-                testResult = task.Result;
-                testPassed = task.Result switch { bool b => b, _ => true };
-            }
-            catch (CompilationErrorException compilationEx)
+                   container.Result = task.Result;
+                   container.Passed = task.Result switch { bool b => b, _ => true };
+               }
+               catch (Exception ex)
+               {
+                   container.Exception = ex is AggregateException ae ? ae.InnerException : ex;
+                   container.Passed = false;
+               }
+               finally
+               {
+                   if (captureConsoleOutput)
+                   {
+                       Console.SetOut(originalOut);
+                       Console.SetError(originalError);
+                   }
+               }
+            });
+
+            staThread.SetApartmentState(ApartmentState.STA);
+            staThread.Start();
+
+            if (!staThread.Join(TimeSpan.FromSeconds(Math.Max(10, 30))))
             {
-                runtimeException = compilationEx;
-                testPassed = false;
-            }
-            catch (Exception testEx)
-            {
-                runtimeException = testEx;
-                testPassed = false;
-            }
-            finally
-            {
-                if (captureConsoleOutput)
-                {
-                    Console.SetOut(originalOut);
-                    Console.SetError(originalError);
-                }
+                // Thread.Abort is not supported in .NET Core+, so we just abandon the thread.
+                // try { staThread.Abort(); } catch { }
+                container.Exception = new TimeoutException("STA thread test execution timed out");
+                container.Passed = false;
             }
         });
 
-        staThread.SetApartmentState(ApartmentState.STA);
-        staThread.Start();
-
-        if (!staThread.Join(TimeSpan.FromSeconds(Math.Max(10, 30))))
-        {
-            try { staThread.Abort(); } catch { }
-            runtimeException = new TimeoutException("STA thread test execution timed out");
-            return false;
-        }
-
-        return testPassed;
+        return container;
     }
 
     /// <summary>

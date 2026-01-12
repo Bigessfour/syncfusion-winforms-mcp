@@ -11,7 +11,7 @@ using Syncfusion.Windows.Forms;
 namespace WileyWidget.McpServer.Tools;
 
 /// <summary>
-/// Enhanced MCP tool for dynamic evaluation of C# code snippets with stateful REPL, STA thread marshalling, 
+/// Enhanced MCP tool for dynamic evaluation of C# code snippets with stateful REPL, STA thread marshalling,
 /// screenshot capture, and structured output.
 /// Provides rapid prototyping, debugging, and UI validation capabilities without recompilation.
 /// </summary>
@@ -27,7 +27,7 @@ public static class EvalCSharpTool
     /// </summary>
     public class EvalGlobals
     {
-        public SkinManager SkinManager { get; set; } = SkinManager.Instance;
+        // public SkinManager SkinManager { get; set; } = SkinManager.Instance; // Removed: Static only
         public TestHelper TestHelper { get; set; } = new();
         public Dictionary<string, object> Vars { get; set; } = new();
 
@@ -253,7 +253,7 @@ public static class EvalCSharpTool
                 timeoutWarning = $"⚠️ Running close to timeout ({duration.TotalSeconds:F2}s / {timeoutSeconds}s)";
             }
 
-            return FormatResponse(jsonOutput, success: true, output: output.ToString(), 
+            return FormatResponse(jsonOutput, success: true, output: output.ToString(),
                 returnValue: returnValue, screenshotPath: screenshotPath,
                 durationMs: duration.TotalMilliseconds, timeoutWarning: timeoutWarning);
         }
@@ -304,10 +304,10 @@ public static class EvalCSharpTool
 
             // Configure script options with resilient reference loading
             var scriptOptions = ScriptOptions.Default;
-            
+
             // Add references with error handling for missing assemblies
-            var referencesToAdd = new[] 
-            { 
+            var referencesToAdd = new[]
+            {
                 typeof(System.Windows.Forms.Form).Assembly,
                 typeof(Syncfusion.WinForms.Controls.SfForm).Assembly,
                 typeof(Syncfusion.WinForms.DataGrid.SfDataGrid).Assembly,
@@ -321,7 +321,7 @@ public static class EvalCSharpTool
                 typeof(object).Assembly, // mscorlib/System.Private.CoreLib
                 typeof(System.Linq.Enumerable).Assembly, // System.Linq
             };
-            
+
             foreach (var asm in referencesToAdd.Distinct())
             {
                 try
@@ -330,7 +330,7 @@ public static class EvalCSharpTool
                 }
                 catch { /* Silently skip unavailable assemblies */ }
             }
-            
+
             scriptOptions = scriptOptions
                 .WithImports(
                     "System",
@@ -408,8 +408,8 @@ SkinManager.SetVisualStyle(form, ""Office2019Colorful"");
 ",
         "datagrid" => @"
 var grid = new SfDataGrid { Name = ""TestGrid"", Height = 300, Width = 400 };
-var dataSource = new List<object> 
-{ 
+var dataSource = new List<object>
+{
     new { Id = 1, Name = ""Item 1"" },
     new { Id = 2, Name = ""Item 2"" }
 };
