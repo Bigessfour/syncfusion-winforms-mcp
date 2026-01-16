@@ -203,7 +203,7 @@ public static class InspectDockingManagerTool
         // Global DockingManager checks (policies / best practices)
         if (dm.EnableDocumentMode)
         {
-            issues.Add("⚠️  POLICY VIOLATION: EnableDocumentMode=true violates WileyWidget standard (should be false - use TabbedMDI instead)");
+            issues.Add("⚠️  POLICY VIOLATION: EnableDocumentMode=true violates WileyWidget standard (should be false - standard is Docking Panels only)");
         }
 
         if (!dm.PersistState)

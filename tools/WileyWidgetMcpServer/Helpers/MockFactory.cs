@@ -42,21 +42,15 @@ public static class MockFactory
     /// Creates a mock MainForm for isolated form testing using the parameterless constructor.
     /// The MainForm will have a TestServiceProvider injected so GetRequiredService returns mocks.
     /// </summary>
-    public static MainForm CreateMockMainForm(bool enableMdi = false)
+    public static MainForm CreateMockMainForm()
     {
-        var mainForm = new MainForm();
+        IServiceProvider sp = new TestServiceProvider();
+        Microsoft.Extensions.Configuration.IConfiguration config = Mock.Of<Microsoft.Extensions.Configuration.IConfiguration>();
+        ILogger<MainForm> logger = Mock.Of<ILogger<MainForm>>();
+        WileyWidget.WinForms.Configuration.ReportViewerLaunchOptions reportViewerOptions = Mock.Of<WileyWidget.WinForms.Configuration.ReportViewerLaunchOptions>();
+        WileyWidget.WinForms.Services.IThemeService themeService = Mock.Of<WileyWidget.WinForms.Services.IThemeService>();
 
-        // Inject a simple test IServiceProvider (mock-backed) so calls to GetRequiredService don't throw
-        try
-        {
-            var sp = new TestServiceProvider();
-            var field = typeof(MainForm).GetField("_serviceProvider", System.Reflection.BindingFlags.Instance | System.Reflection.BindingFlags.NonPublic);
-            field?.SetValue(mainForm, sp);
-        }
-        catch
-        {
-            // If reflection fails, proceed without a ServiceProvider and rely on constructor-level mocks
-        }
+        MainForm mainForm = new MainForm(sp, config, logger, reportViewerOptions, themeService);
 
         return mainForm;
     }
@@ -64,5 +58,8 @@ public static class MockFactory
     /// <summary>
     /// Returns a test IServiceProvider that will supply Mock.Of<T>() instances for requested services.
     /// </summary>
-    public static IServiceProvider CreateTestServiceProvider() => new TestServiceProvider();
+    public static IServiceProvider CreateTestServiceProvider()
+    {
+        return new TestServiceProvider();
+    }
 }

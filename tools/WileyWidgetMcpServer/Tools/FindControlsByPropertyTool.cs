@@ -47,7 +47,7 @@ public static class FindControlsByPropertyTool
             if (!typeof(Form).IsAssignableFrom(type))
                 return OutputFormatter.FormatError($"'{formTypeName}' is not a Form");
 
-            var mockMainForm = MockFactory.CreateMockMainForm(enableMdi: true);
+            var mockMainForm = MockFactory.CreateMockMainForm();
             var form = FormInstantiationHelper.InstantiateForm(type, mockMainForm);
 
             try
