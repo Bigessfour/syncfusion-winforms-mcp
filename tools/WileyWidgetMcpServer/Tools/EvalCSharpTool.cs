@@ -347,6 +347,7 @@ public static class EvalCSharpTool
                     "Syncfusion.WinForms.ListView",
                     "Syncfusion.Windows.Forms",
                     "WileyWidget.WinForms.Forms",
+                    "WileyWidget.WinForms.Controls",
                     "WileyWidget.WinForms.Themes",
                     "WileyWidget.WinForms.ViewModels",
                     "WileyWidget.Services",

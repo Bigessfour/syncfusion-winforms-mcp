@@ -284,6 +284,7 @@ public static class RunHeadlessFormTestTool
             typeof(Syncfusion.WinForms.ListView.SfListView).Assembly,
             typeof(WileyWidget.WinForms.Forms.MainForm).Assembly,
             typeof(WileyWidget.McpServer.Helpers.SyncfusionTestHelper).Assembly,
+            typeof(WileyWidget.McpServer.Tools.BatchValidatePanelsTool).Assembly,
             typeof(object).Assembly,
             typeof(System.Linq.Enumerable).Assembly,
         };
@@ -312,9 +313,11 @@ public static class RunHeadlessFormTestTool
                 "Syncfusion.Windows.Forms",
                 "Syncfusion.WinForms.ListView",
                 "WileyWidget.WinForms.Forms",
+                "WileyWidget.WinForms.Controls",
                 "WileyWidget.WinForms.ViewModels",
                 "WileyWidget.Services",
-                "WileyWidget.McpServer.Helpers");
+                "WileyWidget.McpServer.Helpers",
+                "WileyWidget.McpServer.Tools");
     }
 
     /// <summary>
