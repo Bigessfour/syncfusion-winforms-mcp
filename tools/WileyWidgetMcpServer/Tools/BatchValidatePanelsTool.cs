@@ -6,6 +6,9 @@ using System.Reflection;
 using System.Text;
 using System.Text.Json;
 using System.Windows.Forms;
+using System.Threading;
+using System.Threading.Tasks;
+using System.Collections.Concurrent;
 using Microsoft.Extensions.Logging;
 using WileyWidget.McpServer.Helpers;
 using WileyWidget.WinForms;
@@ -32,7 +35,13 @@ public static class BatchValidatePanelsTool
         [Description("Stop validation on first failure (default: false)")]
         bool failFast = false,
         [Description("Output format: 'text', 'json', or 'html' (default: 'text')")]
-        string outputFormat = "text")
+        string outputFormat = "text",
+        [Description("Operation timeout per panel in seconds (default: 30)")]
+        int timeoutSeconds = 30,
+        [Description("Max concurrent panels to validate (default: 4). Set to 1 for sequential runs.")]
+        int maxDegreeOfParallelism = 4,
+        [Description("Run validations sequentially (legacy, disables parallelism).")]
+        bool sequential = false)
     {
         var startTime = DateTime.UtcNow;
         var results = new List<PanelValidationResult>();
@@ -60,286 +69,316 @@ public static class BatchValidatePanelsTool
                 return "ℹ️  No panels found to validate. Check that UserControls exist in WileyWidget.WinForms.Controls namespace.";
             }
 
-            // Validate each panel
-            foreach (var panelTypeName in panelsList)
+            // Core per-panel validation logic. Runs on a UI/STA thread.
+            PanelValidationResult ValidatePanelCore(string panelTypeNameLocal)
             {
-                var sw = System.Diagnostics.Stopwatch.StartNew();
-                var panelResult = new PanelValidationResult
+                var swInner = System.Diagnostics.Stopwatch.StartNew();
+                var panelResultInner = new PanelValidationResult
                 {
-                    PanelTypeName = panelTypeName,
-                    PanelName = panelTypeName.Split('.').Last(),
+                    PanelTypeName = panelTypeNameLocal,
+                    PanelName = panelTypeNameLocal.Split('.').Last(),
                     ExpectedTheme = expectedTheme,
                     ValidationTime = DateTime.UtcNow
                 };
 
-                long instantiationTimeMs = 0;
-                long themeLoadTimeMs = 0;
-                long validationTimeMs = 0;
+                long instantiationTimeMsInner = 0;
+                long themeLoadTimeMsInner = 0;
+                long validationTimeMsInner = 0;
 
                 try
                 {
-                    Form? mockHostForm = null;
-                    UserControl? panel = null;
+                    Form? mockHostFormInner = null;
+                    UserControl? panelInner = null;
 
                     try
                     {
                         // Create mock host form for realistic panel parent
-                        mockHostForm = MockFactory.CreateMockMainForm();
+                        mockHostFormInner = MockFactory.CreateMockMainForm();
 
                         // Get panel type from cache
-                        var panelType = PanelTypeCache.GetPanelType(panelTypeName);
-                        if (panelType == null)
+                        var panelTypeInner = PanelTypeCache.GetPanelType(panelTypeNameLocal);
+                        if (panelTypeInner == null)
                         {
-                            panelResult.Passed = false;
-                            panelResult.Error = $"Panel type not found: {panelTypeName}";
-                            results.Add(panelResult);
-                            continue;
+                            panelResultInner.Passed = false;
+                            panelResultInner.Error = $"Panel type not found: {panelTypeNameLocal}";
+                            return panelResultInner;
                         }
 
                         // Instantiate panel with DI mocking - track timing
-                        var instantiationSw = System.Diagnostics.Stopwatch.StartNew();
+                        var instantiationSwInner = System.Diagnostics.Stopwatch.StartNew();
                         try
                         {
-                            panel = PanelInstantiationHelper.InstantiatePanel(panelType, mockHostForm);
-                            instantiationTimeMs = instantiationSw.ElapsedMilliseconds;
+                            panelInner = PanelInstantiationHelper.InstantiatePanel(panelTypeInner, mockHostFormInner);
+                            instantiationTimeMsInner = instantiationSwInner.ElapsedMilliseconds;
                         }
                         catch (NullReferenceException nre)
                         {
-                            // Make Validation More Forgiving / Diagnostic
-                            // Catch NullReferenceException and log the stack trace (where exactly it dies)
-                            panelResult.Passed = false;
-                            panelResult.Error = $"NullReferenceException during instantiation: {nre.Message}\n\nStack Trace:\n{nre.StackTrace}";
-                            results.Add(panelResult);
-                            PanelInstantiationHelper.SafeDispose(panel, mockHostForm);
-                            continue;
+                            panelResultInner.Passed = false;
+                            panelResultInner.Error = $"NullReferenceException during instantiation: {nre.Message}\n\nStack Trace:\n{nre.StackTrace}";
+                            PanelInstantiationHelper.SafeDispose(panelInner, mockHostFormInner);
+                            return panelResultInner;
                         }
                         catch (Exception ex)
                         {
-                            panelResult.Passed = false;
-                            panelResult.Error = $"Failed to instantiate: {ex.Message}\n\n{ex.ToString()}";
-                            results.Add(panelResult);
-                            PanelInstantiationHelper.SafeDispose(panel, mockHostForm);
-                            continue;
+                            panelResultInner.Passed = false;
+                            panelResultInner.Error = $"Failed to instantiate: {ex.Message}\n\n{ex.ToString()}";
+                            PanelInstantiationHelper.SafeDispose(panelInner, mockHostFormInner);
+                            return panelResultInner;
                         }
                         finally
                         {
-                            instantiationSw.Stop();
+                            instantiationSwInner.Stop();
                         }
 
                         // Load panel with theme - track timing and apply at form level
-                        var themeSw = System.Diagnostics.Stopwatch.StartNew();
-                        bool loaded = false;
-                        Console.WriteLine($"[THEME LOAD START] About to call LoadPanelWithTheme for {panel?.GetType().Name ?? "null"}");
+                        var themeSwInner = System.Diagnostics.Stopwatch.StartNew();
+                        bool loadedInner = false;
                         try
                         {
-                            loaded = PanelInstantiationHelper.LoadPanelWithTheme(panel, expectedTheme, parentForm: mockHostForm);
-                            themeLoadTimeMs = themeSw.ElapsedMilliseconds;
-                            Console.WriteLine($"[THEME LOAD SUCCESS] LoadPanelWithTheme returned {loaded}");
+                            loadedInner = PanelInstantiationHelper.LoadPanelWithTheme(panelInner, expectedTheme, parentForm: mockHostFormInner);
+                            themeLoadTimeMsInner = themeSwInner.ElapsedMilliseconds;
                         }
                         catch (NullReferenceException nre)
                         {
-                            panelResult.Error = $"NullReferenceException during theme loading: {nre.Message}\n\nStack Trace:\n{nre.StackTrace}";
-                            loaded = false;
-                            Console.WriteLine($"[THEME LOAD NRE] {nre.Message}");
+                            panelResultInner.Error = $"NullReferenceException during theme loading: {nre.Message}\n\nStack Trace:\n{nre.StackTrace}";
+                            loadedInner = false;
                         }
                         catch (Exception ex)
                         {
-                            panelResult.Error = $"Exception during theme loading: {ex.Message}\n\n{ex.ToString()}";
-                            loaded = false;
-                            Console.WriteLine($"[THEME LOAD EXCEPTION] {ex.Message}");
+                            panelResultInner.Error = $"Exception during theme loading: {ex.Message}\n\n{ex.ToString()}";
+                            loadedInner = false;
                         }
                         finally
                         {
-                            themeSw.Stop();
+                            themeSwInner.Stop();
                         }
 
-                        Console.WriteLine($"[THEME LOADING COMPLETE] loaded={loaded}, panel={panel?.GetType().Name ?? "null"}, error={panelResult.Error}");
-
-                        if (!loaded)
+                        if (!loadedInner)
                         {
-                            panelResult.Passed = false;
-                            if (string.IsNullOrEmpty(panelResult.Error))
-                                panelResult.Error = "Failed to load panel components";
-                            results.Add(panelResult);
-                            PanelInstantiationHelper.SafeDispose(panel, mockHostForm);
-                            continue;
+                            panelResultInner.Passed = false;
+                            if (string.IsNullOrEmpty(panelResultInner.Error))
+                                panelResultInner.Error = "Failed to load panel components";
+                            PanelInstantiationHelper.SafeDispose(panelInner, mockHostFormInner);
+                            return panelResultInner;
                         }
 
-                        Console.WriteLine($"[PRE-VALIDATION] About to start validation phase for {panel?.GetType().Name ?? "null"}");
-
-                        // Validation phase - track timing and be more forgiving
-                        var validationSw = System.Diagnostics.Stopwatch.StartNew();
-                        Console.WriteLine($"[VALIDATION PHASE START] About to enter validation try block for {panel?.GetType().Name ?? "null"}");
+                        // Validation phase
+                        var validationSwInner = System.Diagnostics.Stopwatch.StartNew();
                         try
                         {
-                            Console.WriteLine($"[VALIDATION PHASE ENTERED] Entered validation try block");
-                            // Check if panel is null before validation
-                            if (panel == null)
+                            if (panelInner == null)
                             {
-                                panelResult.Passed = false;
-                                panelResult.Error = "Panel is null before validation phase";
-                                results.Add(panelResult);
-                                PanelInstantiationHelper.SafeDispose(panel, mockHostForm);
-                                continue;
+                                panelResultInner.Passed = false;
+                                panelResultInner.Error = "Panel is null before validation phase";
+                                PanelInstantiationHelper.SafeDispose(panelInner, mockHostFormInner);
+                                return panelResultInner;
                             }
 
-                            Console.WriteLine($"[VALIDATION START] {panel.GetType().Name}: Panel is not null, beginning validation checks");
-
-                            // Theme validation - skip if context missing
-                            Console.WriteLine($"[VALIDATION DEBUG] About to call ValidateTheme");
+                            // Theme validation
                             try
                             {
-                                Console.WriteLine($"[VALIDATION START] {panel.GetType().Name}: Beginning theme validation");
-                                var themeResult = SyncfusionTestHelper.ValidateTheme(panel, expectedTheme);
-                                Console.WriteLine($"[VALIDATION MID] {panel.GetType().Name}: Theme validation returned {themeResult}");
-                                panelResult.ThemeValid = themeResult;
-                                Console.WriteLine($"[VALIDATION PROGRESS] {panel.GetType().Name}: Theme validation completed");
+                                panelResultInner.ThemeValid = SyncfusionTestHelper.ValidateTheme(panelInner, expectedTheme);
                             }
-                            catch (NullReferenceException nre)
+                            catch (Exception ex)
                             {
-                                panelResult.ThemeValid = false;
-                                panelResult.Error = $"NullReferenceException in theme validation: {nre.Message}\n\nStack Trace:\n{nre.StackTrace}";
-                                Console.WriteLine($"[VALIDATION CRASH] {panel.GetType().Name}: Theme validation NRE - {nre.Message}");
+                                panelResultInner.ThemeValid = false;
+                                panelResultInner.Error = $"Theme validation error: {ex.Message}";
                             }
 
                             // Manual color validation (strict compliance)
                             try
                             {
-                                var colorViolations = SyncfusionTestHelper.ValidateNoManualColors(panel);
-                                panelResult.ManualColorViolations = colorViolations.ToArray();
-                                panelResult.ViolationCount = colorViolations.Count;
-                                Console.WriteLine($"[VALIDATION PROGRESS] {panel.GetType().Name}: Color validation completed - {colorViolations.Count} violations");
+                                var colorViolationsInner = SyncfusionTestHelper.ValidateNoManualColors(panelInner);
+                                panelResultInner.ManualColorViolations = colorViolationsInner.ToArray();
+                                panelResultInner.ViolationCount = colorViolationsInner.Count;
                             }
-                            catch (NullReferenceException nre)
+                            catch (Exception ex)
                             {
-                                panelResult.ManualColorViolations = new[] { $"NullReferenceException in color validation: {nre.Message}" };
-                                panelResult.ViolationCount = 1;
-                                Console.WriteLine($"[VALIDATION CRASH] {panel.GetType().Name}: Color validation NRE - {nre.Message}");
+                                panelResultInner.ManualColorViolations = new[] { $"Color validation exception: {ex.Message}" };
+                                panelResultInner.ViolationCount = 1;
+                            }
+
+                            // Static source-level scan for manual colors (file:line:snippet)
+                            try
+                            {
+                                var staticViolations = SyncfusionTestHelper.ScanSourceForManualColors(panelTypeNameLocal);
+                                panelResultInner.StaticColorViolations = staticViolations.ToArray();
+                            }
+                            catch
+                            {
+                                // Ignore static scan failures - runtime validation is primary
                             }
 
                             // Control compliance validation
                             try
                             {
-                                panelResult.ControlCompliance = ValidateControlCompliance(panel);
-                                Console.WriteLine($"[VALIDATION PROGRESS] {panel.GetType().Name}: Control compliance validation completed");
+                                panelResultInner.ControlCompliance = ValidateControlCompliance(panelInner);
                             }
-                            catch (NullReferenceException nre)
+                            catch (Exception ex)
                             {
-                                panelResult.ControlCompliance = false;
-                                panelResult.Error = $"NullReferenceException in control compliance: {nre.Message}\n\nStack Trace:\n{nre.StackTrace}";
-                                Console.WriteLine($"[VALIDATION CRASH] {panel.GetType().Name}: Control compliance NRE - {nre.Message}");
+                                panelResultInner.ControlCompliance = false;
+                                panelResultInner.Error = $"Control compliance error: {ex.Message}";
                             }
 
-                            // MVVM validation - skip if context missing
+                            // MVVM validation
                             try
                             {
-                                panelResult.MvvmValid = ValidateMvvmBindings(panel);
-                                Console.WriteLine($"[VALIDATION PROGRESS] {panel.GetType().Name}: MVVM validation completed");
+                                panelResultInner.MvvmValid = ValidateMvvmBindings(panelInner);
                             }
-                            catch (NullReferenceException nre)
+                            catch (Exception ex)
                             {
-                                panelResult.MvvmValid = false;
-                                panelResult.Error = $"NullReferenceException in MVVM validation: {nre.Message}\n\nStack Trace:\n{nre.StackTrace}";
-                                Console.WriteLine($"[VALIDATION CRASH] {panel.GetType().Name}: MVVM validation NRE - {nre.Message}");
+                                panelResultInner.MvvmValid = false;
+                                panelResultInner.Error = $"MVVM validation error: {ex.Message}";
                             }
 
                             // Validation setup validation
                             try
                             {
-                                panelResult.ValidationSetupValid = ValidateErrorProviderSetup(panel, out var bindingIssues);
-                                panelResult.DataBindingIssues = bindingIssues;
-                                Console.WriteLine($"[VALIDATION PROGRESS] {panel.GetType().Name}: ErrorProvider validation completed");
+                                panelResultInner.ValidationSetupValid = ValidateErrorProviderSetup(panelInner, out var bindingIssuesInner);
+                                panelResultInner.DataBindingIssues = bindingIssuesInner;
                             }
-                            catch (NullReferenceException nre)
+                            catch (Exception ex)
                             {
-                                panelResult.ValidationSetupValid = false;
-                                panelResult.DataBindingIssues = new[] { $"NullReferenceException in validation setup: {nre.Message}" };
-                                Console.WriteLine($"[VALIDATION CRASH] {panel.GetType().Name}: ErrorProvider validation NRE - {nre.Message}");
+                                panelResultInner.ValidationSetupValid = false;
+                                panelResultInner.DataBindingIssues = new[] { $"Validation setup exception: {ex.Message}" };
                             }
 
                             // ICompletablePanel validation (if implemented)
-                            if (panel is ICompletablePanel completable)
+                            if (panelInner is ICompletablePanel completableInner)
                             {
                                 try
                                 {
-                                    panelResult.IsValid = completable.IsValid;
-                                    if (completable.ValidationErrors != null && completable.ValidationErrors.Count > 0)
+                                    panelResultInner.IsValid = completableInner.IsValid;
+                                    if (completableInner.ValidationErrors != null && completableInner.ValidationErrors.Count > 0)
                                     {
-                                        panelResult.ValidationErrors = completable.ValidationErrors
+                                        panelResultInner.ValidationErrors = completableInner.ValidationErrors
                                             .Select(v => $"{v.FieldName}: {v.Message} ({v.Severity})")
                                             .ToArray();
                                     }
-                                    Console.WriteLine($"[VALIDATION PROGRESS] {panel.GetType().Name}: ICompletablePanel validation completed");
-                                }
-                                catch (NullReferenceException nre)
-                                {
-                                    panelResult.IsValid = false;
-                                    panelResult.ValidationErrors = new[] { $"NullReferenceException in ICompletablePanel: {nre.Message}" };
-                                    Console.WriteLine($"[VALIDATION CRASH] {panel.GetType().Name}: ICompletablePanel validation NRE - {nre.Message}");
                                 }
                                 catch
                                 {
-                                    // ICompletablePanel validation is optional
-                                    panelResult.IsValid = true;
+                                    panelResultInner.IsValid = true;
                                 }
                             }
 
-                            validationTimeMs = validationSw.ElapsedMilliseconds;
-                            Console.WriteLine($"[VALIDATION COMPLETE] {panel.GetType().Name}: All validation checks finished");
-                        }
-                        catch (Exception ex)
-                        {
-                            panelResult.Passed = false;
-                            panelResult.Error = $"Unexpected validation error: {ex.Message}\n\n{ex.ToString()}";
-                            PanelInstantiationHelper.SafeDispose(panel, mockHostForm);
-                            results.Add(panelResult);
-                            continue;
+                            validationTimeMsInner = validationSwInner.ElapsedMilliseconds;
                         }
                         finally
                         {
-                            validationSw.Stop();
+                            validationSwInner.Stop();
                         }
 
-                        // Overall pass: be more forgiving - skip theme/MVVM checks if instantiation succeeds but context is missing
-                        // Only fail if there are actual violations or critical errors
-                        var hasCriticalErrors = !string.IsNullOrEmpty(panelResult.Error) &&
-                                               (panelResult.Error.Contains("NullReferenceException") ||
-                                                panelResult.Error.Contains("Failed to instantiate") ||
-                                                panelResult.Error.Contains("Failed to load"));
+                        var hasCriticalErrorsInner = !string.IsNullOrEmpty(panelResultInner.Error) &&
+                                                   (panelResultInner.Error.Contains("NullReferenceException") ||
+                                                    panelResultInner.Error.Contains("Failed to instantiate") ||
+                                                    panelResultInner.Error.Contains("Failed to load"));
 
-                        panelResult.Passed = !hasCriticalErrors &&
-                                             panelResult.ControlCompliance &&
-                                             panelResult.ValidationSetupValid &&
-                                             panelResult.ViolationCount == 0 &&
-                                             panelResult.DataBindingIssues.Length == 0;
+                        panelResultInner.Passed = !hasCriticalErrorsInner &&
+                                                 panelResultInner.ControlCompliance &&
+                                                 panelResultInner.ValidationSetupValid &&
+                                                 panelResultInner.ViolationCount == 0 &&
+                                                 panelResultInner.DataBindingIssues.Length == 0;
 
                         // Set timing information
-                        panelResult.InstantiationTimeMs = instantiationTimeMs;
-                        panelResult.ThemeLoadTimeMs = themeLoadTimeMs;
-                        panelResult.ValidationTimeMs = validationTimeMs;
+                        panelResultInner.InstantiationTimeMs = instantiationTimeMsInner;
+                        panelResultInner.ThemeLoadTimeMs = themeLoadTimeMsInner;
+                        panelResultInner.ValidationTimeMs = validationTimeMsInner;
 
-                        // Cleanup
-                        PanelInstantiationHelper.SafeDispose(panel, mockHostForm);
+                        return panelResultInner;
                     }
                     catch (Exception ex)
                     {
-                        panelResult.Passed = false;
-                        panelResult.Error = $"Validation error: {ex.Message}";
-                        PanelInstantiationHelper.SafeDispose(panel, mockHostForm);
+                        panelResultInner.Passed = false;
+                        panelResultInner.Error = $"Validation error: {ex.Message}";
+                        PanelInstantiationHelper.SafeDispose(panelInner, mockHostFormInner);
+                        return panelResultInner;
+                    }
+                    finally
+                    {
+                        PanelInstantiationHelper.SafeDispose(panelInner, mockHostFormInner);
                     }
                 }
                 finally
                 {
-                    sw.Stop();
-                    panelResult.DurationMs = sw.ElapsedMilliseconds;
+                    swInner.Stop();
+                    panelResultInner.DurationMs = swInner.ElapsedMilliseconds;
                 }
+            }
 
-                results.Add(panelResult);
+            // Concurrency execution (per-panel STA with throttle)
+            var resultsLock = new object();
+            var tasks = new List<Task>();
+            var cts = new CancellationTokenSource();
+            var maxParallel = sequential ? 1 : Math.Max(1, maxDegreeOfParallelism);
+            using var sem = new SemaphoreSlim(maxParallel);
 
-                if (failFast && !panelResult.Passed)
+            foreach (var panelTypeName in panelsList)
+            {
+                try
+                {
+                    sem.Wait(cts.Token);
+                }
+                catch (OperationCanceledException)
                 {
                     break;
                 }
+
+                var task = Task.Run(() =>
+                {
+                    PanelValidationResult panelResultLocal;
+                    try
+                    {
+                        panelResultLocal = PanelInstantiationHelper.ExecuteOnStaThread(() => ValidatePanelCore(panelTypeName), timeoutSeconds);
+                    }
+                    catch (TimeoutException ex)
+                    {
+                        panelResultLocal = new PanelValidationResult
+                        {
+                            PanelTypeName = panelTypeName,
+                            PanelName = panelTypeName.Split('.').Last(),
+                            ExpectedTheme = expectedTheme,
+                            Passed = false,
+                            Error = $"Timeout after {timeoutSeconds}s: {ex.Message}",
+                            ValidationTime = DateTime.UtcNow
+                        };
+                    }
+                    catch (Exception ex)
+                    {
+                        panelResultLocal = new PanelValidationResult
+                        {
+                            PanelTypeName = panelTypeName,
+                            PanelName = panelTypeName.Split('.').Last(),
+                            ExpectedTheme = expectedTheme,
+                            Passed = false,
+                            Error = $"Unexpected validation error: {ex.Message}",
+                            ValidationTime = DateTime.UtcNow
+                        };
+                    }
+
+                    lock (resultsLock)
+                    {
+                        results.Add(panelResultLocal);
+                    }
+
+                    if (failFast && !panelResultLocal.Passed)
+                    {
+                        try { cts.Cancel(); } catch { }
+                    }
+
+                    sem.Release();
+                }, cts.Token);
+
+                tasks.Add(task);
+            }
+
+            try
+            {
+                Task.WaitAll(tasks.ToArray());
+            }
+            catch (AggregateException)
+            {
+                // Ignore task cancellations / partial failures when failFast is used
             }
 
             var duration = DateTime.UtcNow - startTime;
@@ -478,9 +517,8 @@ public static class BatchValidatePanelsTool
         }
     }
 
-    /// <summary>
-    /// Generate plain text validation report.
-    /// </summary>
+    // (Report generation methods unchanged - retained below)
+
     private static string GenerateTextReport(List<PanelValidationResult> results, TimeSpan duration, int totalPanels)
     {
         var sb = new StringBuilder();
@@ -515,9 +553,20 @@ public static class BatchValidatePanelsTool
                     sb.AppendLine($"    ❌ Validation Setup: ErrorProvider not configured");
                 if (result.ViolationCount > 0)
                     sb.AppendLine($"    ❌ Manual Colors: {result.ViolationCount} violation(s)");
-                if (!string.IsNullOrEmpty(result.Error))
-                    sb.AppendLine($"    ❌ Error: {result.Error}");
-                sb.AppendLine($"    ⏱️  Timing: Inst={result.InstantiationTimeMs}ms, Theme={result.ThemeLoadTimeMs}ms, Valid={result.ValidationTimeMs}ms");
+                        if (result.StaticColorViolations != null && result.StaticColorViolations.Length > 0)
+                            sb.AppendLine($"    ❌ Static Manual Colors (source): {result.StaticColorViolations.Length} violation(s)");
+                        if (!string.IsNullOrEmpty(result.Error))
+                            sb.AppendLine($"    ❌ Error: {result.Error}");
+                        sb.AppendLine($"    ⏱️  Timing: Inst={result.InstantiationTimeMs}ms, Theme={result.ThemeLoadTimeMs}ms, Valid={result.ValidationTimeMs}ms");
+                        if (result.StaticColorViolations != null && result.StaticColorViolations.Length > 0)
+                        {
+                            foreach (var sv in result.StaticColorViolations.Take(5))
+                            {
+                                sb.AppendLine($"      - {sv}");
+                            }
+                            if (result.StaticColorViolations.Length > 5)
+                                sb.AppendLine($"      ... and {result.StaticColorViolations.Length - 5} more static violations");
+                        }
                 sb.AppendLine();
             }
         }
@@ -555,6 +604,7 @@ public static class BatchValidatePanelsTool
                     r.ViolationCount
                 },
                 r.ManualColorViolations,
+                r.StaticColorViolations,
                 r.DataBindingIssues,
                 r.ValidationErrors,
                 r.Error,
@@ -571,9 +621,6 @@ public static class BatchValidatePanelsTool
         return JsonSerializer.Serialize(report, new JsonSerializerOptions { WriteIndented = true });
     }
 
-    /// <summary>
-    /// Generate HTML validation report.
-    /// </summary>
     private static string GenerateHtmlReport(List<PanelValidationResult> results, TimeSpan duration, int totalPanels)
     {
         var sb = new StringBuilder();
@@ -635,17 +682,21 @@ public static class BatchValidatePanelsTool
                 if (!result.ValidationSetupValid)
                     sb.AppendLine("<div class='violation'>❌ Validation Setup: Failed</div>");
                 if (result.ViolationCount > 0)
-                    sb.AppendLine($"<div class='violation'>❌ Manual Colors: {result.ViolationCount} violation(s)</div>");
-                if (result.DataBindingIssues.Length > 0)
                 {
-                    foreach (var issue in result.DataBindingIssues)
-                        sb.AppendLine($"<div class='violation'>❌ Binding: {issue}</div>");
+                    sb.AppendLine($"<div class='violation'>❌ Manual Colors: {result.ViolationCount} violation(s)</div>");
+                    if (result.StaticColorViolations != null && result.StaticColorViolations.Length > 0)
+                    {
+                        sb.AppendLine($"<div class='violation'>❌ Static Manual Colors (source): {result.StaticColorViolations.Length} violation(s)</div>");
+                        sb.AppendLine("<ul>");
+                        foreach (var sv in result.StaticColorViolations.Take(5))
+                            sb.AppendLine($"<li>{System.Net.WebUtility.HtmlEncode(sv)}</li>");
+                        if (result.StaticColorViolations.Length > 5)
+                            sb.AppendLine($"<li>... and {result.StaticColorViolations.Length - 5} more</li>");
+                        sb.AppendLine("</ul>");
+                    }
                 }
-                if (!string.IsNullOrEmpty(result.Error))
-                    sb.AppendLine($"<div class='violation'>❌ Error: {result.Error}</div>");
                 sb.AppendLine("</div>");
             }
-
             sb.AppendLine("</div>");
         }
 

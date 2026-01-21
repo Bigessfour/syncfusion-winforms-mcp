@@ -1,10 +1,16 @@
 using ModelContextProtocol.Server;
+using System;
+using System.Collections.Generic;
+using System.Linq;
+using System.Reflection;
+using System.IO;
 using System.ComponentModel;
 using Microsoft.CodeAnalysis.CSharp.Scripting;
 using Microsoft.CodeAnalysis.Scripting;
 using System.Text;
 using System.Text.Json;
 using System.Threading;
+using System.Threading.Tasks;
 
 namespace WileyWidget.McpServer.Tools;
 
@@ -269,55 +275,74 @@ public static class RunHeadlessFormTestTool
 
     /// <summary>
     /// Build script options with all necessary Syncfusion and WileyWidget references.
+    /// This implementation only adds Syncfusion imports when the corresponding assemblies are available.
     /// </summary>
     private static ScriptOptions BuildScriptOptions()
     {
         var options = ScriptOptions.Default;
 
-        var references = new[]
+        var candidateTypes = new[]
         {
-            typeof(System.Windows.Forms.Form).Assembly,
-            typeof(Syncfusion.WinForms.Controls.SfForm).Assembly,
-            typeof(Syncfusion.WinForms.DataGrid.SfDataGrid).Assembly,
-            typeof(Syncfusion.WinForms.Themes.Office2019Theme).Assembly,
-            typeof(Syncfusion.Windows.Forms.SkinManager).Assembly,
-            typeof(Syncfusion.WinForms.ListView.SfListView).Assembly,
-            typeof(WileyWidget.WinForms.Forms.MainForm).Assembly,
-            typeof(WileyWidget.McpServer.Helpers.SyncfusionTestHelper).Assembly,
-            typeof(WileyWidget.McpServer.Tools.BatchValidatePanelsTool).Assembly,
-            typeof(object).Assembly,
-            typeof(System.Linq.Enumerable).Assembly,
+            typeof(System.Windows.Forms.Form),
+            typeof(Syncfusion.WinForms.Controls.SfForm),
+            typeof(Syncfusion.WinForms.DataGrid.SfDataGrid),
+            typeof(Syncfusion.WinForms.Themes.Office2019Theme),
+            typeof(Syncfusion.Windows.Forms.SkinManager),
+            typeof(Syncfusion.WinForms.ListView.SfListView),
+            typeof(WileyWidget.WinForms.Forms.MainForm),
+            typeof(WileyWidget.McpServer.Helpers.SyncfusionTestHelper),
+            typeof(WileyWidget.McpServer.Tools.BatchValidatePanelsTool),
+            typeof(object),
+            typeof(System.Linq.Enumerable),
         };
 
-        foreach (var asm in references.Distinct())
+        var addedAssemblies = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+
+        foreach (var t in candidateTypes)
         {
             try
             {
+                var asm = t.Assembly;
                 options = options.WithReferences(asm);
+                addedAssemblies.Add(asm.GetName().Name ?? string.Empty);
             }
-            catch { /* Silently skip unavailable assemblies */ }
+            catch
+            {
+                // Skip unavailable assemblies silently
+            }
         }
 
-        return options
-            .WithImports(
-                "System",
-                "System.Collections.Generic",
-                "System.Windows.Forms",
-                "System.Linq",
-                "System.Reflection",
-                "System.Text",
-                "System.Threading.Tasks",
-                "Syncfusion.WinForms.Controls",
-                "Syncfusion.WinForms.DataGrid",
-                "Syncfusion.WinForms.Themes",
-                "Syncfusion.Windows.Forms",
-                "Syncfusion.WinForms.ListView",
-                "WileyWidget.WinForms.Forms",
-                "WileyWidget.WinForms.Controls",
-                "WileyWidget.WinForms.ViewModels",
-                "WileyWidget.Services",
-                "WileyWidget.McpServer.Helpers",
-                "WileyWidget.McpServer.Tools");
+        // Base imports always useful
+        var imports = new List<string>
+        {
+            "System",
+            "System.Collections.Generic",
+            "System.Linq",
+            "System.Reflection",
+            "System.Text",
+            "System.Threading.Tasks",
+            "System.Windows.Forms",
+            "WileyWidget.WinForms.Forms",
+            "WileyWidget.WinForms.Controls",
+            "WileyWidget.WinForms.ViewModels",
+            "WileyWidget.Services",
+            "WileyWidget.McpServer.Helpers",
+            "WileyWidget.McpServer.Tools"
+        };
+
+        // Conditionally add Syncfusion imports when assemblies are present
+        if (addedAssemblies.Any(n => n.StartsWith("Syncfusion.WinForms.Controls", StringComparison.OrdinalIgnoreCase)))
+            imports.Add("Syncfusion.WinForms.Controls");
+        if (addedAssemblies.Any(n => n.StartsWith("Syncfusion.WinForms.DataGrid", StringComparison.OrdinalIgnoreCase) || n.Contains("DataGrid", StringComparison.OrdinalIgnoreCase)))
+            imports.Add("Syncfusion.WinForms.DataGrid");
+        if (addedAssemblies.Any(n => n.StartsWith("Syncfusion.WinForms.Themes", StringComparison.OrdinalIgnoreCase)))
+            imports.Add("Syncfusion.WinForms.Themes");
+        if (addedAssemblies.Any(n => n.StartsWith("Syncfusion.Windows.Forms", StringComparison.OrdinalIgnoreCase)))
+            imports.Add("Syncfusion.Windows.Forms");
+        if (addedAssemblies.Any(n => n.StartsWith("Syncfusion.WinForms.ListView", StringComparison.OrdinalIgnoreCase)))
+            imports.Add("Syncfusion.WinForms.ListView");
+
+        return options.WithImports(imports);
     }
 
     /// <summary>

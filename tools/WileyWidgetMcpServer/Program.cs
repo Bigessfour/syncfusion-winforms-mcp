@@ -34,6 +34,18 @@ public class Program
                     Console.WriteLine(result);
                     return 0;
                 }
+
+                if (args[0] == "--batch-validate-panels")
+                {
+                    var fmt = args.Length > 1 ? args[1] : "text";
+                    var result = WileyWidget.McpServer.Tools.BatchValidatePanelsTool.BatchValidatePanels(
+                        panelTypeNames: null,
+                        expectedTheme: "Office2019Colorful",
+                        failFast: false,
+                        outputFormat: fmt);
+                    Console.WriteLine(result);
+                    return 0;
+                }
             }
 
             // Create empty application builder (no console output noise for STDIO transport)

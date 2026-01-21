@@ -1,4 +1,5 @@
 using System.Windows.Forms;
+using System.IO;
 using Syncfusion.WinForms.DataGrid;
 using Syncfusion.WinForms.Controls;
 using Syncfusion.WinForms.Themes;
@@ -11,40 +12,50 @@ namespace WileyWidget.McpServer.Helpers;
 public static class SyncfusionTestHelper
 {
     /// <summary>
-    /// Validates that a form uses the expected theme via SkinManager.
+    /// Validates that a control uses the expected theme via SkinManager.
     /// Checks Syncfusion controls for proper theme application.
     /// </summary>
-    public static bool ValidateTheme(Form form, string expectedTheme)
+    public static bool ValidateTheme(Control control, string expectedTheme)
     {
-        if (form == null || form.IsDisposed)
-            return false;
-
-        // Check if any Syncfusion controls have the expected theme
-        var syncfusionControls = GetAllSyncfusionControls(form);
-
-        // If no Syncfusion controls, form passes by default
-        if (syncfusionControls.Count == 0)
-            return true;
-
-        // Check if controls have proper theme name or rely on default
-        // Note: ThemeName may be empty if using SkinManager cascade
-        foreach (var control in syncfusionControls)
+        try
         {
-            // Try to get ThemeName property via reflection (available on most Syncfusion controls)
-            var themeNameProp = control.GetType().GetProperty("ThemeName");
-            if (themeNameProp != null)
+            if (control == null || control.IsDisposed)
+                return false;
+
+            // Check if any Syncfusion controls have the expected theme
+            var syncfusionControls = GetAllSyncfusionControls(control);
+
+            // If no Syncfusion controls, form passes by default
+            if (syncfusionControls.Count == 0)
+                return true;
+
+            // Check if controls have proper theme name or rely on default
+            // Note: ThemeName may be empty if using SkinManager cascade
+            foreach (var ctrl in syncfusionControls)
             {
-                var themeName = themeNameProp.GetValue(control) as string;
-                // Empty theme name means using parent/SkinManager cascade (valid)
-                // Otherwise, must match expected theme
-                if (!string.IsNullOrEmpty(themeName) && themeName != expectedTheme)
+                // Try to get ThemeName property via reflection (available on most Syncfusion controls)
+                var themeNameProp = ctrl.GetType().GetProperty("ThemeName");
+                if (themeNameProp != null)
                 {
-                    return false;
+                    var themeName = themeNameProp.GetValue(ctrl) as string;
+                    // Empty theme name means using parent/SkinManager cascade (valid)
+                    // Otherwise, must match expected theme
+                    if (!string.IsNullOrEmpty(themeName) && themeName != expectedTheme)
+                    {
+                        Console.WriteLine($"[Theme Validation] {control.GetType().Name}: Control {ctrl.GetType().Name} has theme '{themeName}' but expected '{expectedTheme}'");
+                        return false;
+                    }
                 }
             }
-        }
 
-        return true;
+            Console.WriteLine($"[Theme Validation] {control.GetType().Name}: PASS - {syncfusionControls.Count} Syncfusion controls validated");
+            return true;
+        }
+        catch (Exception ex)
+        {
+            Console.WriteLine($"[Theme Validation CRASH] {control?.GetType().Name ?? "null"}: {ex.Message}\n{ex.StackTrace}");
+            return false;
+        }
     }
 
     /// <summary>
@@ -76,69 +87,78 @@ public static class SyncfusionTestHelper
     /// </summary>
     public static List<string> ValidateNoManualColors(Control control, string path = "")
     {
-        ArgumentNullException.ThrowIfNull(control);
-        var violations = new List<string>();
-        var currentPath = string.IsNullOrEmpty(path) ? control.Name ?? control.GetType().Name : $"{path}.{control.Name ?? control.GetType().Name}";
-
-        // Allowed colors (semantic status indicators)
-        var allowedSemanticColors = new[]
+        try
         {
-            Color.Red,
-            Color.Green,
-            Color.Orange,
-            Color.Yellow,
-            Color.LimeGreen,
-            Color.DarkRed,
-            Color.DarkGreen,
-            Color.OrangeRed
-        };
+            ArgumentNullException.ThrowIfNull(control);
+            var violations = new List<string>();
+            var currentPath = string.IsNullOrEmpty(path) ? control.Name ?? control.GetType().Name : $"{path}.{control.Name ?? control.GetType().Name}";
 
-        // Allowed system/default colors (including common WinForms defaults)
-        var allowedSystemColors = new[]
-        {
-            SystemColors.Control,
-            SystemColors.Window,
-            SystemColors.ControlLight,
-            SystemColors.ControlDark,
-            SystemColors.ControlText,
-            Color.Transparent,
-            Color.White,
-            Color.Empty
-        };
-
-        // Check BackColor
-        if (!allowedSystemColors.Contains(control.BackColor) &&
-            !allowedSemanticColors.Contains(control.BackColor) &&
-            control.BackColor.A > 0) // Ignore fully transparent
-        {
-            // Special case: Syncfusion controls may have themed colors
-            var isSyncfusionControl = control.GetType().Namespace?.StartsWith("Syncfusion", StringComparison.Ordinal) == true;
-            if (!isSyncfusionControl)
+            // Allowed colors (semantic status indicators)
+            var allowedSemanticColors = new[]
             {
-                violations.Add($"{currentPath}.BackColor = {ColorToString(control.BackColor)} (manual color - use SkinManager instead)");
-            }
-        }
+                Color.Red,
+                Color.Green,
+                Color.Orange,
+                Color.Yellow,
+                Color.LimeGreen,
+                Color.DarkRed,
+                Color.DarkGreen,
+                Color.OrangeRed
+            };
 
-        // Check ForeColor - also allow standard WinForms default text colors
-        var allowedForeColors = allowedSystemColors.Concat(new[] { Color.Black }).ToArray();
-        if (!allowedForeColors.Contains(control.ForeColor) &&
-            !allowedSemanticColors.Contains(control.ForeColor) &&
-            control.ForeColor.A > 0) // Ignore fully transparent
-        {
-            var isSyncfusionControl = control.GetType().Namespace?.StartsWith("Syncfusion", StringComparison.Ordinal) == true;
-            if (!isSyncfusionControl)
+            // Allowed system/default colors (including common WinForms defaults)
+            var allowedSystemColors = new[]
             {
-                violations.Add($"{currentPath}.ForeColor = {ColorToString(control.ForeColor)} (manual color - use SkinManager instead)");
+                SystemColors.Control,
+                SystemColors.Window,
+                SystemColors.ControlLight,
+                SystemColors.ControlDark,
+                SystemColors.ControlText,
+                Color.Transparent,
+                Color.White,
+                Color.Empty
+            };
+
+            // Check BackColor
+            if (!allowedSystemColors.Contains(control.BackColor) &&
+                !allowedSemanticColors.Contains(control.BackColor) &&
+                control.BackColor.A > 0) // Ignore fully transparent
+            {
+                // Special case: Syncfusion controls may have themed colors
+                var isSyncfusionControl = control.GetType().Namespace?.StartsWith("Syncfusion", StringComparison.Ordinal) == true;
+                if (!isSyncfusionControl)
+                {
+                    violations.Add($"{currentPath}.BackColor = {ColorToString(control.BackColor)} (manual color - use SkinManager instead)");
+                }
             }
-        }
 
-        // Recursively check children
-        foreach (Control child in control.Controls)
+            // Check ForeColor - also allow standard WinForms default text colors
+            var allowedForeColors = allowedSystemColors.Concat(new[] { Color.Black }).ToArray();
+            if (!allowedForeColors.Contains(control.ForeColor) &&
+                !allowedSemanticColors.Contains(control.ForeColor) &&
+                control.ForeColor.A > 0) // Ignore fully transparent
+            {
+                var isSyncfusionControl = control.GetType().Namespace?.StartsWith("Syncfusion", StringComparison.Ordinal) == true;
+                if (!isSyncfusionControl)
+                {
+                    violations.Add($"{currentPath}.ForeColor = {ColorToString(control.ForeColor)} (manual color - use SkinManager instead)");
+                }
+            }
+
+            // Recursively check children
+            foreach (Control child in control.Controls)
+            {
+                violations.AddRange(ValidateNoManualColors(child, currentPath));
+            }
+
+            Console.WriteLine($"[Color Validation] {control.GetType().Name}: {violations.Count} violations found");
+            return violations;
+        }
+        catch (Exception ex)
         {
-            violations.AddRange(ValidateNoManualColors(child, currentPath));
+            Console.WriteLine($"[Color Validation CRASH] {control?.GetType().Name ?? "null"}: {ex.Message}\n{ex.StackTrace}");
+            return new List<string> { $"Color validation crashed: {ex.Message}" };
         }
-
-        return violations;
     }
 
     /// <summary>
@@ -181,6 +201,66 @@ public static class SyncfusionTestHelper
     {
         // Basic validation: grid exists, has columns
         return grid != null && grid.Columns.Count > 0;
+    }
+
+    /// <summary>
+    /// Static source scan for manual color assignments in the panel's class file(s).
+    /// Returns lines in the form file.cs:line: snippet for any occurrences of BackColor/ForeColor/Color.FromArgb.
+    /// </summary>
+    public static List<string> ScanSourceForManualColors(string panelTypeName)
+    {
+        var violations = new List<string>();
+        try
+        {
+            if (string.IsNullOrEmpty(panelTypeName)) return violations;
+
+            var className = panelTypeName.Split('.').Last();
+
+            // Heuristic: look under src/WileyWidget.WinForms/Controls for files containing the class declaration
+            var workspaceRoot = Directory.GetCurrentDirectory();
+            var controlsPath = Path.Combine(workspaceRoot, "src", "WileyWidget.WinForms", "Controls");
+
+            // Fallback: if controlsPath doesn't exist, search the workspace for the class
+            IEnumerable<string> candidateFiles;
+            if (Directory.Exists(controlsPath))
+            {
+                candidateFiles = Directory.EnumerateFiles(controlsPath, "*.cs", SearchOption.AllDirectories);
+            }
+            else
+            {
+                candidateFiles = Directory.EnumerateFiles(workspaceRoot, "*.cs", SearchOption.AllDirectories);
+            }
+
+            foreach (var file in candidateFiles)
+            {
+                try
+                {
+                    var content = File.ReadAllText(file);
+                    if (!content.Contains($"class {className}"))
+                        continue;
+
+                    var lines = File.ReadAllLines(file);
+                    for (int i = 0; i < lines.Length; i++)
+                    {
+                        var line = lines[i];
+                        if (line.Contains(".BackColor") || line.Contains(".ForeColor") || line.Contains("Color.FromArgb"))
+                        {
+                            violations.Add($"{Path.GetFileName(file)}:{i + 1}: {line.Trim()}");
+                        }
+                    }
+                }
+                catch
+                {
+                    // Ignore file access errors
+                }
+            }
+
+            return violations;
+        }
+        catch (Exception ex)
+        {
+            return new List<string> { $"Static scan failed: {ex.Message}" };
+        }
     }
 
     /// <summary>

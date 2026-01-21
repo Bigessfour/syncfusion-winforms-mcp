@@ -1,6 +1,12 @@
 using Microsoft.Extensions.Logging;
+using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.Configuration;
 using Moq;
 using WileyWidget.WinForms.Forms;
+using WileyWidget.WinForms.Configuration;
+using WileyWidget.WinForms.Services;
+using WileyWidget.WinForms.Services.Abstractions;
+using System;
 
 namespace WileyWidget.McpServer.Helpers;
 
@@ -9,57 +15,99 @@ namespace WileyWidget.McpServer.Helpers;
 /// </summary>
 public static class MockFactory
 {
-    /// <summary>
-    /// Lightweight IServiceProvider used for tests. Returns a Mock.Of<T>() for requested interfaces.
-    /// </summary>
-    private class TestServiceProvider : IServiceProvider
+    static MockFactory()
     {
-        public object? GetService(Type serviceType)
+        // Register Syncfusion license from environment variable to prevent license dialogs
+        try
         {
-            try
+            var licenseKey = System.Environment.GetEnvironmentVariable("SYNCFUSION_LICENSE_KEY");
+            if (!string.IsNullOrEmpty(licenseKey))
             {
-                if (serviceType == typeof(IServiceProvider)) return this;
-
-                // Prefer Mock.Of<T>() to generate a lightweight mock instance
-                var ofMethod = typeof(Moq.Mock).GetMethods(System.Reflection.BindingFlags.Public | System.Reflection.BindingFlags.Static)
-                    .FirstOrDefault(m => m.Name == "Of" && m.IsGenericMethod && m.GetParameters().Length == 0);
-
-                if (ofMethod != null)
-                {
-                    return ofMethod.MakeGenericMethod(serviceType).Invoke(null, null);
-                }
-
-                return null;
-            }
-            catch
-            {
-                return null;
+                Syncfusion.Licensing.SyncfusionLicenseProvider.RegisterLicense(licenseKey);
             }
         }
+        catch
+        {
+            // Suppress license registration errors - trial/development mode
+        }
+    }
+    private static IServiceProvider CreateRealServiceProvider()
+    {
+        var services = DependencyInjection.CreateServiceCollection(includeDefaults: true);
+        return services.BuildServiceProvider(new ServiceProviderOptions
+        {
+            ValidateOnBuild = false,
+            ValidateScopes = false
+        });
     }
 
     /// <summary>
-    /// Creates a mock MainForm for isolated form testing using the parameterless constructor.
-    /// The MainForm will have a TestServiceProvider injected so GetRequiredService returns mocks.
+    /// Creates a mock MainForm using the real DI container configured for tests.
+    /// This avoids null stubs and exercises production registrations.
     /// </summary>
     public static MainForm CreateMockMainForm()
     {
-        IServiceProvider sp = new TestServiceProvider();
-        Microsoft.Extensions.Configuration.IConfiguration config = Mock.Of<Microsoft.Extensions.Configuration.IConfiguration>();
-        ILogger<MainForm> logger = Mock.Of<ILogger<MainForm>>();
-        WileyWidget.WinForms.Configuration.ReportViewerLaunchOptions reportViewerOptions = Mock.Of<WileyWidget.WinForms.Configuration.ReportViewerLaunchOptions>();
-        WileyWidget.WinForms.Services.IThemeService themeService = Mock.Of<WileyWidget.WinForms.Services.IThemeService>();
+        var sp = CreateTestServiceProvider();
+        var config = sp.GetRequiredService<IConfiguration>();
+        var logger = sp.GetRequiredService<ILogger<MainForm>>();
+        var reportViewerOptions = sp.GetRequiredService<ReportViewerLaunchOptions>();
+        var themeService = sp.GetRequiredService<IThemeService>();
+        var windowStateService = sp.GetRequiredService<IWindowStateService>();
+        var fileImportService = sp.GetRequiredService<IFileImportService>();
 
-        MainForm mainForm = new MainForm(sp, config, logger, reportViewerOptions, themeService);
-
-        return mainForm;
+        // Ensure the argument order matches the MainForm constructor
+        return new MainForm(sp, config, logger, reportViewerOptions, themeService, windowStateService, fileImportService);
     }
 
     /// <summary>
-    /// Returns a test IServiceProvider that will supply Mock.Of<T>() instances for requested services.
+    /// Returns a test IServiceProvider backed by the real service registrations.
     /// </summary>
     public static IServiceProvider CreateTestServiceProvider()
     {
-        return new TestServiceProvider();
+        return CreateRealServiceProvider();
+    }
+
+    /// <summary>
+    /// Creates a mock IServiceScopeFactory for testing.
+    /// </summary>
+    public static IServiceScopeFactory CreateMockServiceScopeFactory()
+    {
+        return Mock.Of<IServiceScopeFactory>();
+    }
+
+    /// <summary>
+    /// Creates a mock ILogger for the specified type.
+    /// </summary>
+    public static object CreateMockLogger(Type loggerType)
+    {
+        if (loggerType.IsGenericType && loggerType.GetGenericTypeDefinition() == typeof(ILogger<>))
+        {
+            var genericArg = loggerType.GetGenericArguments()[0];
+            var method = typeof(MockFactory).GetMethod("CreateMockLoggerGeneric", System.Reflection.BindingFlags.Static | System.Reflection.BindingFlags.NonPublic);
+            return method!.MakeGenericMethod(genericArg).Invoke(null, null)!;
+        }
+        return Mock.Of<ILogger>();
+    }
+
+    private static ILogger<T> CreateMockLoggerGeneric<T>()
+    {
+        return Mock.Of<ILogger<T>>();
+    }
+
+    /// <summary>
+    /// Creates a mock instance of the specified interface type.
+    /// </summary>
+    public static object CreateMockInterface(Type interfaceType)
+    {
+        var ofMethod = typeof(Moq.Mock).GetMethods(System.Reflection.BindingFlags.Public | System.Reflection.BindingFlags.Static)
+            .FirstOrDefault(m => m.Name == "Of" && m.IsGenericMethod && m.GetParameters().Length == 0);
+
+        if (ofMethod != null)
+        {
+            var genericMethod = ofMethod.MakeGenericMethod(interfaceType);
+            return genericMethod.Invoke(null, null)!;
+        }
+
+        throw new InvalidOperationException($"Cannot create mock for type {interfaceType}");
     }
 }

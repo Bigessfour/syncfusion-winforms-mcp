@@ -41,6 +41,9 @@ public class PanelValidationResult
     /// <summary>List of manual color violation details</summary>
     public string[] ManualColorViolations { get; set; } = Array.Empty<string>();
 
+    /// <summary>Static source-level color violations (file:line:snippet)</summary>
+    public string[] StaticColorViolations { get; set; } = Array.Empty<string>();
+
     /// <summary>Data binding issues (if any)</summary>
     public string[] DataBindingIssues { get; set; } = Array.Empty<string>();
 

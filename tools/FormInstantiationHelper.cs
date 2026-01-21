@@ -2,7 +2,6 @@ using System.Windows.Forms;
 using System.IO;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Logging.Abstractions;
-using Microsoft.Extensions.DependencyInjection;
 using Moq;
 using Syncfusion.WinForms.Themes;
 using WileyWidget.WinForms.Forms;
@@ -15,17 +14,6 @@ namespace WileyWidget.McpServer.Helpers;
 /// </summary>
 public static class FormInstantiationHelper
 {
-    static FormInstantiationHelper()
-    {
-        // Suppress Syncfusion license validation dialogs in headless/test mode
-        // This prevents hangs when creating forms without a valid license
-        try
-        {
-            // Set environment variable to suppress Syncfusion license warnings
-            System.Environment.SetEnvironmentVariable("SYNCFUSION_SILENT_LICENSE_VALIDATION", "true");
-        }
-        catch { }
-    }
     /// <summary>
     /// Instantiates a form with proper constructor parameter handling.
     /// Supports DI-style constructors with automatic mock parameter injection.
@@ -36,8 +24,6 @@ public static class FormInstantiationHelper
             throw new ArgumentNullException(nameof(formType));
         if (mockMainForm == null)
             throw new ArgumentNullException(nameof(mockMainForm));
-
-        var serviceProvider = MockFactory.CreateTestServiceProvider();
 
         // Get all public constructors ordered by parameter count (prefer simpler constructors)
         var constructors = formType.GetConstructors()
@@ -61,14 +47,6 @@ public static class FormInstantiationHelper
                 if (paramType == typeof(MainForm) || paramType.IsAssignableFrom(typeof(MainForm)))
                 {
                     args[i] = mockMainForm;
-                }
-                else if (paramType == typeof(IServiceProvider))
-                {
-                    args[i] = serviceProvider;
-                }
-                else if (TryResolveFromProvider(serviceProvider, paramType, out var resolved))
-                {
-                    args[i] = resolved;
                 }
                 // Provide ILogger<T> via Mock.Of<T>() where possible, fallback to NullLogger
                 else if (paramType.IsGenericType &&
@@ -119,6 +97,10 @@ public static class FormInstantiationHelper
                         args[i] = $"dummy-{i}";
                     }
                 }
+                else if (paramType == typeof(IServiceProvider))
+                {
+                    args[i] = MockFactory.CreateTestServiceProvider();
+                }
                 // Try to create mock ViewModel with constructor parameter mocking
                 else if (paramType.Name.EndsWith("ViewModel", StringComparison.OrdinalIgnoreCase))
                 {
@@ -159,11 +141,7 @@ public static class FormInstantiationHelper
                                             // Special-case IServiceProvider to provide a test provider that returns mocks for services
                                             if (vpType == typeof(IServiceProvider))
                                             {
-                                                viewModelArgs[j] = serviceProvider;
-                                            }
-                                            else if (TryResolveFromProvider(serviceProvider, vpType, out var vmResolved))
-                                            {
-                                                viewModelArgs[j] = vmResolved;
+                                                viewModelArgs[j] = MockFactory.CreateTestServiceProvider();
                                             }
                                             else
                                             {
@@ -212,26 +190,19 @@ public static class FormInstantiationHelper
                 {
                     try
                     {
-                        if (TryResolveFromProvider(serviceProvider, paramType, out var ifaceResolved))
+                        // Prefer Mock.Of<T>() to avoid AmbiguousMatch issues
+                        var ofMethod = typeof(Mock).GetMethods(System.Reflection.BindingFlags.Public | System.Reflection.BindingFlags.Static)
+                            .FirstOrDefault(m => m.Name == "Of" && m.IsGenericMethod && m.GetParameters().Length == 0);
+                        if (ofMethod != null)
                         {
-                            args[i] = ifaceResolved;
+                            args[i] = ofMethod.MakeGenericMethod(paramType).Invoke(null, null);
                         }
                         else
                         {
-                            // Prefer Mock.Of<T>() to avoid AmbiguousMatch issues
-                            var ofMethod = typeof(Mock).GetMethods(System.Reflection.BindingFlags.Public | System.Reflection.BindingFlags.Static)
-                                .FirstOrDefault(m => m.Name == "Of" && m.IsGenericMethod && m.GetParameters().Length == 0);
-                            if (ofMethod != null)
-                            {
-                                args[i] = ofMethod.MakeGenericMethod(paramType).Invoke(null, null);
-                            }
-                            else
-                            {
-                                var mockType = typeof(Mock<>).MakeGenericType(paramType);
-                                var mock = Activator.CreateInstance(mockType);
-                                var objectProperty = mockType.GetProperty("Object");
-                                args[i] = objectProperty?.GetValue(mock);
-                            }
+                            var mockType = typeof(Mock<>).MakeGenericType(paramType);
+                            var mock = Activator.CreateInstance(mockType);
+                            var objectProperty = mockType.GetProperty("Object");
+                            args[i] = objectProperty?.GetValue(mock);
                         }
                     }
                     catch
@@ -266,31 +237,6 @@ public static class FormInstantiationHelper
         throw new InvalidOperationException(
             $"Form type '{formType.FullName}' does not have a suitable constructor. " +
             $"Tried {constructors.Length} constructor(s) but none could be instantiated with mock parameters. Last error: {(lastEx == null ? "(no details)" : lastEx.ToString())}");
-    }
-
-    private static bool TryResolveFromProvider(IServiceProvider provider, Type paramType, out object? resolved)
-    {
-        resolved = null;
-        try
-        {
-            resolved = provider.GetService(paramType);
-            if (resolved != null)
-            {
-                return true;
-            }
-
-            if (!paramType.IsAbstract && !paramType.IsInterface && !typeof(Form).IsAssignableFrom(paramType))
-            {
-                resolved = ActivatorUtilities.CreateInstance(provider, paramType);
-                return resolved != null;
-            }
-        }
-        catch
-        {
-            resolved = null;
-        }
-
-        return false;
     }
 
     /// <summary>
@@ -328,6 +274,16 @@ public static class FormInstantiationHelper
             {
                 // Suppress disposal errors (common with DockingManager/Ribbon background threads)
             }
+
+            // Suppress finalization to prevent phantom cleanup errors
+            try
+            {
+                GC.SuppressFinalize(form);
+            }
+            catch
+            {
+                // Ignore
+            }
         }
 
         if (mockMainForm != null)
@@ -342,6 +298,15 @@ public static class FormInstantiationHelper
             catch
             {
                 // Suppress disposal errors
+            }
+
+            try
+            {
+                GC.SuppressFinalize(mockMainForm);
+            }
+            catch
+            {
+                // Ignore
             }
         }
     }
