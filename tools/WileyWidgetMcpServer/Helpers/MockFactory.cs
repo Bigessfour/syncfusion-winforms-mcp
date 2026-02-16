@@ -1,6 +1,11 @@
+using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.Logging;
 using Moq;
+using WileyWidget.Services.Abstractions;
+using WileyWidget.WinForms.Configuration;
 using WileyWidget.WinForms.Forms;
+using WileyWidget.WinForms.Services;
+using WileyWidget.WinForms.Services.Abstractions;
 
 namespace WileyWidget.McpServer.Helpers;
 
@@ -9,6 +14,27 @@ namespace WileyWidget.McpServer.Helpers;
 /// </summary>
 public static class MockFactory
 {
+    public static IConfiguration CreateTestConfiguration()
+    {
+        // Headless / MCP validation configuration:
+        // - Treat as UI test harness to skip expensive startup paths.
+        // - Disable docking and auto-show behavior to avoid background threads that can destabilize stdio servers.
+        var dict = new Dictionary<string, string?>
+        {
+            ["UI:IsUiTestHarness"] = "true",
+            ["UI:UseSyncfusionDocking"] = "false",
+            ["UI:AutoShowDashboard"] = "false",
+            ["UI:AutoShowPanels"] = "false",
+            ["UI:MinimalMode"] = "true",
+            ["UI:DefaultTheme"] = "Office2019Colorful",
+            ["Diagnostics:VerboseFirstChanceExceptions"] = "false"
+        };
+
+        return new ConfigurationBuilder()
+            .AddInMemoryCollection(dict)
+            .Build();
+    }
+
     /// <summary>
     /// Lightweight IServiceProvider used for tests. Returns a Mock.Of<T>() for requested interfaces.
     /// </summary>
@@ -39,24 +65,20 @@ public static class MockFactory
     }
 
     /// <summary>
-    /// Creates a mock MainForm for isolated form testing using the parameterless constructor.
-    /// The MainForm will have a TestServiceProvider injected so GetRequiredService returns mocks.
+    /// Creates a mock MainForm for isolated form testing.
+    /// The MainForm will have all required dependencies mocked.
     /// </summary>
     public static MainForm CreateMockMainForm(bool enableMdi = false)
     {
-        var mainForm = new MainForm();
+        var sp = new TestServiceProvider();
+        var config = CreateTestConfiguration();
+        var logger = Mock.Of<ILogger<MainForm>>();
+        var reportOptions = ReportViewerLaunchOptions.Disabled;
+        var themeService = Mock.Of<IThemeService>();
+        var windowStateService = Mock.Of<IWindowStateService>();
+        var fileImportService = Mock.Of<IFileImportService>();
 
-        // Inject a simple test IServiceProvider (mock-backed) so calls to GetRequiredService don't throw
-        try
-        {
-            var sp = new TestServiceProvider();
-            var field = typeof(MainForm).GetField("_serviceProvider", System.Reflection.BindingFlags.Instance | System.Reflection.BindingFlags.NonPublic);
-            field?.SetValue(mainForm, sp);
-        }
-        catch
-        {
-            // If reflection fails, proceed without a ServiceProvider and rely on constructor-level mocks
-        }
+        var mainForm = new MainForm(sp, config, logger, reportOptions, themeService, windowStateService, fileImportService);
 
         return mainForm;
     }

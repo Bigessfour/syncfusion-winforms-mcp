@@ -13,7 +13,7 @@ The WileyWidget MCP server is **fully functional** and ready for production use.
 ### 1. Core Infrastructure
 
 - ✅ **MCP Server Project** (`WileyWidgetMcpServer.csproj`)
-  - .NET 9.0-windows10.0.26100.0 target framework
+  - .NET 10.0-windows10.0.26100.0 target framework
   - ModelContextProtocol SDK 0.2.0-preview.1 integrated
   - Microsoft.Extensions.Hosting for STDIO transport
   - Microsoft.CodeAnalysis.CSharp.Scripting for dynamic eval
@@ -208,7 +208,7 @@ dotnet build tools/WileyWidgetMcpServer/WileyWidgetMcpServer.csproj
     0 Error(s)
 
 # Executable created
-✅ tools/WileyWidgetMcpServer/bin/Debug/net9.0-windows10.0.26100.0/WileyWidgetMcpServer.exe
+✅ tools/WileyWidgetMcpServer/bin/Debug/net10.0-windows10.0.26100.0/WileyWidgetMcpServer.exe
 ```
 
 ### Warnings (Non-Blocking)

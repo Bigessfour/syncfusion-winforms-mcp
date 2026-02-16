@@ -2,9 +2,11 @@ using ModelContextProtocol.Server;
 using System.ComponentModel;
 using Microsoft.CodeAnalysis.CSharp.Scripting;
 using Microsoft.CodeAnalysis.Scripting;
+using System.Reflection;
 using System.Text;
 using System.Text.Json;
 using System.Threading;
+using Syncfusion.Licensing;
 
 namespace WileyWidget.McpServer.Tools;
 
@@ -21,6 +23,8 @@ public static class RunHeadlessFormTestTool
     /// </summary>
     private static readonly Dictionary<string, object?> _sessionState = new();
     private static readonly object _sessionLock = new();
+    private static readonly object _licenseLock = new();
+    private static bool _licenseInitialized;
     [McpServerTool]
     [Description("Executes a headless UI test for a WinForms form via .csx script or inline C# code. Safe for CI/CD and remote servers—no visual rendering, pure Roslyn scripting with reflection inspection.")]
     public static async Task<string> RunHeadlessFormTest(
@@ -34,8 +38,8 @@ public static class RunHeadlessFormTestTool
         int timeoutSeconds = 30,
         [Description("Whether to capture Console.Out/Console.Error output (default: true)")]
         bool captureConsoleOutput = true,
-        [Description("Whether to run on STA thread for Syncfusion initialization (default: false, rarely needed)")]
-        bool runOnStaThread = false,
+        [Description("Whether to run on STA thread for Syncfusion/WinForms initialization (default: true)")]
+        bool runOnStaThread = true,
         [Description("Return structured JSON output instead of plain text (default: false)")]
         bool jsonOutput = false,
         [Description("Optional: Session ID to store/retrieve test state across calls")]
@@ -50,6 +54,8 @@ public static class RunHeadlessFormTestTool
 
         try
         {
+            EnsureSyncfusionLicenseRegistered();
+
             if (string.IsNullOrEmpty(scriptPath) && string.IsNullOrEmpty(testCode))
             {
                 return FormatResponse(jsonOutput, success: false, error: "Either 'scriptPath' or 'testCode' must be provided.",
@@ -133,6 +139,38 @@ public static class RunHeadlessFormTestTool
         }
     }
 
+    private static void EnsureSyncfusionLicenseRegistered()
+    {
+        lock (_licenseLock)
+        {
+            if (_licenseInitialized)
+            {
+                return;
+            }
+
+            var licenseKey = Environment.GetEnvironmentVariable("SYNCFUSION_LICENSE_KEY")
+                ?? Environment.GetEnvironmentVariable("Syncfusion__LicenseKey")
+                ?? Environment.GetEnvironmentVariable("Syncfusion:LicenseKey")
+                ?? Environment.GetEnvironmentVariable("Syncfusion_LicenseKey");
+
+            if (string.IsNullOrWhiteSpace(licenseKey))
+            {
+                _licenseInitialized = true;
+                return;
+            }
+
+            try
+            {
+                SyncfusionLicenseProvider.RegisterLicense(licenseKey);
+            }
+            catch
+            {
+            }
+
+            _licenseInitialized = true;
+        }
+    }
+
     private class TestExecutionResult
     {
         public bool Passed { get; set; }
@@ -209,18 +247,18 @@ public static class RunHeadlessFormTestTool
         CancellationToken cancellationToken)
     {
         var container = new TestExecutionResult();
+        var originalOut = Console.Out;
+        var originalError = Console.Error;
 
         // We run a managed thread that blocks, so we wrap it in Task.Run if we want to await it,
         // but the method is async so we can just return a Task.
 
         await Task.Run(() =>
         {
+            using var completed = new ManualResetEventSlim(false);
             var staThread = new Thread(() =>
             {
                // ... logic ...
-               var originalOut = Console.Out;
-               var originalError = Console.Error;
-
                try
                {
                    if (captureConsoleOutput)
@@ -249,18 +287,30 @@ public static class RunHeadlessFormTestTool
                        Console.SetOut(originalOut);
                        Console.SetError(originalError);
                    }
+
+                   completed.Set();
                }
             });
 
             staThread.SetApartmentState(ApartmentState.STA);
+            staThread.IsBackground = true;
             staThread.Start();
 
-            if (!staThread.Join(TimeSpan.FromSeconds(Math.Max(10, 30))))
+            while (!completed.IsSet && !cancellationToken.IsCancellationRequested)
             {
-                // Thread.Abort is not supported in .NET Core+, so we just abandon the thread.
-                // try { staThread.Abort(); } catch { }
+                completed.Wait(TimeSpan.FromMilliseconds(200));
+            }
+
+            if (!completed.IsSet)
+            {
                 container.Exception = new TimeoutException("STA thread test execution timed out");
                 container.Passed = false;
+
+                if (captureConsoleOutput)
+                {
+                    Console.SetOut(originalOut);
+                    Console.SetError(originalError);
+                }
             }
         });
 
@@ -273,14 +323,35 @@ public static class RunHeadlessFormTestTool
     private static ScriptOptions BuildScriptOptions()
     {
         var options = ScriptOptions.Default;
+        var referencePaths = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
 
-        var references = new[]
+        static void TryAddAssemblyPath(ISet<string> paths, Assembly? assembly)
+        {
+            if (assembly is null)
+            {
+                return;
+            }
+
+            try
+            {
+                if (!string.IsNullOrWhiteSpace(assembly.Location) && File.Exists(assembly.Location))
+                {
+                    paths.Add(assembly.Location);
+                }
+            }
+            catch
+            {
+            }
+        }
+
+        var requiredAssemblies = new[]
         {
             typeof(System.Windows.Forms.Form).Assembly,
             typeof(Syncfusion.WinForms.Controls.SfForm).Assembly,
             typeof(Syncfusion.WinForms.DataGrid.SfDataGrid).Assembly,
             typeof(Syncfusion.WinForms.Themes.Office2019Theme).Assembly,
             typeof(Syncfusion.Windows.Forms.SkinManager).Assembly,
+            typeof(Syncfusion.Windows.Forms.Tools.RibbonControlAdv).Assembly,
             typeof(Syncfusion.WinForms.ListView.SfListView).Assembly,
             typeof(WileyWidget.WinForms.Forms.MainForm).Assembly,
             typeof(WileyWidget.McpServer.Helpers.SyncfusionTestHelper).Assembly,
@@ -288,14 +359,37 @@ public static class RunHeadlessFormTestTool
             typeof(System.Linq.Enumerable).Assembly,
         };
 
-        foreach (var asm in references.Distinct())
+        foreach (var assembly in requiredAssemblies)
+        {
+            TryAddAssemblyPath(referencePaths, assembly);
+        }
+
+        foreach (var assembly in AppDomain.CurrentDomain.GetAssemblies())
+        {
+            TryAddAssemblyPath(referencePaths, assembly);
+        }
+
+        var runtimeAssemblyNames = new[]
+        {
+            "System.Windows.Forms",
+            "System.Drawing.Common",
+            "Accessibility",
+            "Microsoft.Win32.SystemEvents",
+        };
+
+        foreach (var assemblyName in runtimeAssemblyNames)
         {
             try
             {
-                options = options.WithReferences(asm);
+                var assembly = Assembly.Load(new AssemblyName(assemblyName));
+                TryAddAssemblyPath(referencePaths, assembly);
             }
-            catch { /* Silently skip unavailable assemblies */ }
+            catch
+            {
+            }
         }
+
+        options = options.WithReferences(referencePaths);
 
         return options
             .WithImports(
@@ -310,6 +404,7 @@ public static class RunHeadlessFormTestTool
                 "Syncfusion.WinForms.DataGrid",
                 "Syncfusion.WinForms.Themes",
                 "Syncfusion.Windows.Forms",
+                "Syncfusion.Windows.Forms.Tools",
                 "Syncfusion.WinForms.ListView",
                 "WileyWidget.WinForms.Forms",
                 "WileyWidget.WinForms.ViewModels",

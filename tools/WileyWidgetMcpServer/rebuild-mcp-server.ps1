@@ -60,7 +60,7 @@ try {
 # Step 3: Report
 Write-Host ""
 Write-Host "[3/3] Status" -ForegroundColor Yellow
-$dllPath = Join-Path $scriptDir "bin\Debug\net9.0-windows10.0.26100.0\WileyWidgetMcpServer.dll"
+$dllPath = Join-Path $scriptDir "bin\Debug\net10.0-windows10.0.26100.0\WileyWidgetMcpServer.dll"
 if (Test-Path $dllPath) {
     $dll = Get-Item $dllPath
     Write-Host "  DLL updated: $($dll.LastWriteTime)" -ForegroundColor Gray

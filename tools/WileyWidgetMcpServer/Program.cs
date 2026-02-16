@@ -1,5 +1,7 @@
+using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
+using Microsoft.Extensions.Logging;
 using ModelContextProtocol;
 using WileyWidget.McpServer.Tools;
 
@@ -30,14 +32,33 @@ public class Program
                 {
                     var scriptPath = args[1];
                     Console.WriteLine($"Running script: {scriptPath}...");
-                    var result = await WileyWidget.McpServer.Tools.RunHeadlessFormTestTool.RunHeadlessFormTest(scriptPath: scriptPath);
+                    var result = await WileyWidget.McpServer.Tools.RunHeadlessFormTestTool.RunHeadlessFormTest(
+                        scriptPath: scriptPath,
+                        timeoutSeconds: 120,
+                        runOnStaThread: true);
                     Console.WriteLine(result);
+                    if (result.Contains("❌ Test FAILED", StringComparison.Ordinal))
+                    {
+                        return 1;
+                    }
+
                     return 0;
                 }
             }
 
             // Create empty application builder (no console output noise for STDIO transport)
             var builder = Host.CreateEmptyApplicationBuilder(settings: null);
+
+            // Load configuration from appsettings.json (enables environment-specific logging)
+            builder.Configuration.AddJsonFile("appsettings.json", optional: true, reloadOnChange: false);
+            builder.Configuration.AddJsonFile($"appsettings.{builder.Environment.EnvironmentName}.json", optional: true, reloadOnChange: false);
+            builder.Configuration.AddEnvironmentVariables();
+
+            // IMPORTANT (STDIO transport): never write non-protocol text to STDOUT.
+            // Route all console logs to STDERR to avoid corrupting the MCP JSON-RPC stream.
+            builder.Logging.ClearProviders();
+            builder.Logging.AddConsole(o => o.LogToStandardErrorThreshold = LogLevel.Trace);
+            builder.Logging.AddConfiguration(builder.Configuration.GetSection("Logging"));
 
             // Add MCP server with STDIO transport and tools from assembly
             builder.Services.AddMcpServer()

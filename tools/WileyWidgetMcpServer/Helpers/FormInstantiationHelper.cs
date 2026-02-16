@@ -1,5 +1,6 @@
 using System.Windows.Forms;
 using System.IO;
+using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Logging.Abstractions;
 using Moq;
@@ -14,11 +15,50 @@ namespace WileyWidget.McpServer.Helpers;
 /// </summary>
 public static class FormInstantiationHelper
 {
+    // Recursion prevention: track types being instantiated
+    [ThreadStatic]
+    private static HashSet<Type>? _instantiationStack;
+
+    private static HashSet<Type> GetInstantiationStack()
+    {
+        if (_instantiationStack == null)
+        {
+            _instantiationStack = new HashSet<Type>();
+        }
+        return _instantiationStack;
+    }
+
     /// <summary>
     /// Instantiates a form with proper constructor parameter handling.
     /// Supports DI-style constructors with automatic mock parameter injection.
     /// </summary>
     public static Form InstantiateForm(Type formType, MainForm mockMainForm)
+    {
+        if (formType == null)
+            throw new ArgumentNullException(nameof(formType));
+        if (mockMainForm == null)
+            throw new ArgumentNullException(nameof(mockMainForm));
+
+        var stack = GetInstantiationStack();
+
+        // Prevent recursion: if this type is already being instantiated, throw
+        if (stack.Contains(formType))
+        {
+            throw new InvalidOperationException($"Recursion detected while instantiating {formType.Name}. Check for circular dependencies.");
+        }
+
+        stack.Add(formType);
+        try
+        {
+            return InstantiateFormInternal(formType, mockMainForm);
+        }
+        finally
+        {
+            stack.Remove(formType);
+        }
+    }
+
+    private static Form InstantiateFormInternal(Type formType, MainForm mockMainForm)
     {
         if (formType == null)
             throw new ArgumentNullException(nameof(formType));
@@ -101,9 +141,25 @@ public static class FormInstantiationHelper
                 {
                     args[i] = MockFactory.CreateTestServiceProvider();
                 }
+                else if (paramType == typeof(IConfiguration))
+                {
+                    // Provide a real IConfiguration with headless-safe defaults.
+                    // This is critical for MainForm instantiation so it can detect UI test harness mode.
+                    args[i] = MockFactory.CreateTestConfiguration();
+                }
                 // Try to create mock ViewModel with constructor parameter mocking
+                // RECURSION GUARD: Prevent nested ViewModel instantiation
                 else if (paramType.Name.EndsWith("ViewModel", StringComparison.OrdinalIgnoreCase))
                 {
+                    var stack = GetInstantiationStack();
+
+                    // If we're already instantiating a ViewModel of this type, return null to break recursion
+                    if (stack.Contains(paramType))
+                    {
+                        args[i] = null;
+                        continue;
+                    }
+
                     try
                     {
                         // Try parameterless constructor first
@@ -115,68 +171,83 @@ public static class FormInstantiationHelper
                         else
                         {
                             // ViewModel has dependencies - create it with mocked dependencies
-                            var viewModelCtor = paramType.GetConstructors().OrderBy(c => c.GetParameters().Length).FirstOrDefault();
-                            if (viewModelCtor != null)
+                            stack.Add(paramType);
+                            try
                             {
-                                var viewModelParams = viewModelCtor.GetParameters();
-                                var viewModelArgs = new object?[viewModelParams.Length];
-
-                                for (int j = 0; j < viewModelParams.Length; j++)
+                                var viewModelCtor = paramType.GetConstructors().OrderBy(c => c.GetParameters().Length).FirstOrDefault();
+                                if (viewModelCtor != null)
                                 {
-                                    var vpType = viewModelParams[j].ParameterType;
+                                    var viewModelParams = viewModelCtor.GetParameters();
+                                    var viewModelArgs = new object?[viewModelParams.Length];
 
-                                    // Create NullLogger for ILogger<T>
-                                    if (vpType.IsGenericType && vpType.GetGenericTypeDefinition() == typeof(ILogger<>))
+                                    for (int j = 0; j < viewModelParams.Length; j++)
                                     {
-                                        var loggerType = typeof(NullLogger<>).MakeGenericType(vpType.GetGenericArguments()[0]);
-                                        var instanceProperty = loggerType.GetProperty("Instance",
-                                            System.Reflection.BindingFlags.Public | System.Reflection.BindingFlags.Static);
-                                        viewModelArgs[j] = instanceProperty?.GetValue(null);
-                                    }
-                                    // Mock other interfaces (repositories, services, etc.)
-                                    else if (vpType.IsInterface)
-                                    {
-                                        try
+                                        var vpType = viewModelParams[j].ParameterType;
+
+                                        // RECURSION GUARD: Don't instantiate nested ViewModels
+                                        if (vpType.Name.EndsWith("ViewModel", StringComparison.OrdinalIgnoreCase))
                                         {
-                                            // Special-case IServiceProvider to provide a test provider that returns mocks for services
-                                            if (vpType == typeof(IServiceProvider))
+                                            viewModelArgs[j] = null;
+                                            continue;
+                                        }
+
+                                        // Create NullLogger for ILogger<T>
+                                        if (vpType.IsGenericType && vpType.GetGenericTypeDefinition() == typeof(ILogger<>))
+                                        {
+                                            var loggerType = typeof(NullLogger<>).MakeGenericType(vpType.GetGenericArguments()[0]);
+                                            var instanceProperty = loggerType.GetProperty("Instance",
+                                                System.Reflection.BindingFlags.Public | System.Reflection.BindingFlags.Static);
+                                            viewModelArgs[j] = instanceProperty?.GetValue(null);
+                                        }
+                                        // Mock other interfaces (repositories, services, etc.)
+                                        else if (vpType.IsInterface)
+                                        {
+                                            try
                                             {
-                                                viewModelArgs[j] = MockFactory.CreateTestServiceProvider();
-                                            }
-                                            else
-                                            {
-                                                // Prefer Mock.Of<T>() to avoid AmbiguousMatch issues
-                                                var ofMethod = typeof(Mock).GetMethods(System.Reflection.BindingFlags.Public | System.Reflection.BindingFlags.Static)
-                                                    .FirstOrDefault(m => m.Name == "Of" && m.IsGenericMethod && m.GetParameters().Length == 0);
-                                                if (ofMethod != null)
+                                                // Special-case IServiceProvider to provide a test provider that returns mocks for services
+                                                if (vpType == typeof(IServiceProvider))
                                                 {
-                                                    viewModelArgs[j] = ofMethod.MakeGenericMethod(vpType).Invoke(null, null);
+                                                    viewModelArgs[j] = MockFactory.CreateTestServiceProvider();
                                                 }
                                                 else
                                                 {
-                                                    var mockType = typeof(Mock<>).MakeGenericType(vpType);
-                                                    var mock = Activator.CreateInstance(mockType);
-                                                    var objectProperty = mockType.GetProperty("Object");
-                                                    viewModelArgs[j] = objectProperty?.GetValue(mock);
+                                                    // Prefer Mock.Of<T>() to avoid AmbiguousMatch issues
+                                                    var ofMethod = typeof(Mock).GetMethods(System.Reflection.BindingFlags.Public | System.Reflection.BindingFlags.Static)
+                                                        .FirstOrDefault(m => m.Name == "Of" && m.IsGenericMethod && m.GetParameters().Length == 0);
+                                                    if (ofMethod != null)
+                                                    {
+                                                        viewModelArgs[j] = ofMethod.MakeGenericMethod(vpType).Invoke(null, null);
+                                                    }
+                                                    else
+                                                    {
+                                                        var mockType = typeof(Mock<>).MakeGenericType(vpType);
+                                                        var mock = Activator.CreateInstance(mockType);
+                                                        var objectProperty = mockType.GetProperty("Object");
+                                                        viewModelArgs[j] = objectProperty?.GetValue(mock);
+                                                    }
                                                 }
                                             }
+                                            catch
+                                            {
+                                                viewModelArgs[j] = null;
+                                            }
                                         }
-                                        catch
+                                        else
                                         {
                                             viewModelArgs[j] = null;
                                         }
                                     }
-                                    else
-                                    {
-                                        viewModelArgs[j] = null;
-                                    }
-                                }
 
-                                args[i] = viewModelCtor.Invoke(viewModelArgs);
+                                    args[i] = viewModelCtor.Invoke(viewModelArgs);
+                                }
+                                else
+                                {
+                                    args[i] = null;
+                                }
                             }
-                            else
+                            finally
                             {
-                                args[i] = null;
+                                stack.Remove(paramType);
                             }
                         }
                     }
@@ -275,15 +346,7 @@ public static class FormInstantiationHelper
                 // Suppress disposal errors (common with DockingManager/Ribbon background threads)
             }
 
-            // Suppress finalization to prevent phantom cleanup errors
-            try
-            {
-                GC.SuppressFinalize(form);
-            }
-            catch
-            {
-                // Ignore
-            }
+            // Form disposal handles finalization internally
         }
 
         if (mockMainForm != null)
@@ -300,14 +363,7 @@ public static class FormInstantiationHelper
                 // Suppress disposal errors
             }
 
-            try
-            {
-                GC.SuppressFinalize(mockMainForm);
-            }
-            catch
-            {
-                // Ignore
-            }
+            // MainForm disposal handles finalization internally
         }
     }
 

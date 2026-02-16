@@ -209,7 +209,7 @@ public static class DetectManualColorsTool
             $"      \"control_type\": \"{v.ControlType}\",\n" +
             $"      \"property\": \"{v.PropertyName}\",\n" +
             $"      \"color\": \"{v.ColorValue}\",\n" +
-            $"      \"is_semantic\": {v.IsSemanticColor.ToString().ToLower()},\n" +
+            $"      \"is_semantic\": {v.IsSemanticColor.ToString().ToLowerInvariant()},\n" +
             $"      \"severity\": \"{v.Severity}\"\n" +
             $"    }}" + (i < violations.Count - 1 ? "," : ""));
 
