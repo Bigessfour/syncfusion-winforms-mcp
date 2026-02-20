@@ -95,9 +95,9 @@ public static class InspectDockingManagerTool
             }
         }
 
-        // Fallback: search via reflection for private _dockingManager field
+        // Fallback: search via reflection for private  field
         var dockingManagerField = control.GetType()
-            .GetField("_dockingManager", System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Instance);
+            .GetField("", System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Instance);
 
         if (dockingManagerField != null)
         {

@@ -20,16 +20,55 @@ public class SyncfusionThemeValidator : IThemeValidator
 
     public bool Validate(Control control, string expectedTheme)
     {
-        // Placeholder validation logic
-        return true;
+        var violations = GetViolations(control, expectedTheme);
+        return !violations.Any();
     }
 
     public IEnumerable<ThemeViolation> GetViolations(Control control, string expectedTheme)
     {
-        // Stub implementation - real logic is in SyncfusionTestHelper but it returns bool.
-        // For strict testing, we'd need to refactor SyncfusionTestHelper to return violations.
-        // For now, return empty to pass build.
-        return Enumerable.Empty<ThemeViolation>();
+        var violations = new List<ThemeViolation>();
+
+        // Check if control is a Syncfusion control and validate its theme
+        if (CanHandle(control))
+        {
+            var themeProperty = control.GetType().GetProperty("ThemeName");
+            if (themeProperty != null)
+            {
+                var currentTheme = themeProperty.GetValue(control) as string;
+                if (currentTheme != expectedTheme)
+                {
+                    violations.Add(new ThemeViolation
+                    {
+                        ViolationType = "ThemeMismatch",
+                        ControlPath = GetControlPath(control),
+                        ControlType = control.GetType().Name,
+                        Description = $"Control has theme '{currentTheme}' but expected '{expectedTheme}'",
+                        SuggestedFix = $"Set {control.GetType().Name}.ThemeName = \"{expectedTheme}\"",
+                        Severity = "Error"
+                    });
+                }
+            }
+        }
+
+        // Recursively check child controls
+        foreach (Control child in control.Controls)
+        {
+            violations.AddRange(GetViolations(child, expectedTheme));
+        }
+
+        return violations;
+    }
+
+    private string GetControlPath(Control control)
+    {
+        var path = control.Name ?? control.GetType().Name;
+        var parent = control.Parent;
+        while (parent != null)
+        {
+            path = (parent.Name ?? parent.GetType().Name) + "." + path;
+            parent = parent.Parent;
+        }
+        return path;
     }
 }
 
