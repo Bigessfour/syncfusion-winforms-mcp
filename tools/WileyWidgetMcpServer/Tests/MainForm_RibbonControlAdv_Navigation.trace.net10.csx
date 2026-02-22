@@ -151,7 +151,7 @@ try
 
     var buttonTargetContract = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase)
     {
-        ["Nav_Dashboard"] = "Dashboard",
+        ["Nav_Dashboard"] = "Enterprise Vital Signs",
         ["Nav_Accounts"] = "Municipal Accounts",
         ["Nav_Payments"] = "Payments",
         ["Nav_Budget"] = "Budget",

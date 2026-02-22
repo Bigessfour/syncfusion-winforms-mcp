@@ -71,7 +71,8 @@ bool IsNavigationText(string? text)
     }
 
     var normalized = text.Trim().ToLowerInvariant();
-    return normalized.Contains("dashboard")
+    return normalized.Contains("enterprise")
+        || normalized.Contains("vital")
         || normalized.Contains("account")
         || normalized.Contains("payment")
         || normalized.Contains("settings")

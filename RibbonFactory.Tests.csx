@@ -214,7 +214,7 @@ public class RibbonFactoryTestRunner
                 var groups = homeTab.Panel.Controls.OfType<ToolStripEx>().ToList();
                 var groupNames = groups.Select(g => g.Text).ToList();
 
-                var expectedGroups = new[] { "Dashboard", "Financials", "Reporting", "Tools", "Layout", "Views", "Actions" };
+                var expectedGroups = new[] { "Core Navigation", "Financials", "Reporting", "Tools", "Layout", "Views", "Actions" };
                 foreach (var expected in expectedGroups)
                 {
                     Assert.True(groupNames.Any(g => g.Contains(expected)),

@@ -32,7 +32,7 @@ Show me columns, data binding, and sample rows.
 ### Example 3: Detect Manual Color Assignments
 
 ```
-Use DetectManualColorsTool to find all manual color assignments in DashboardPanel.
+Use DetectManualColorsTool to find all manual color assignments in EnterpriseVitalSignsPanel.
 I want to ensure we're using SkinManager everywhere.
 ```
 
